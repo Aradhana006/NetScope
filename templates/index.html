@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NetScope — Network &amp; DNS Diagnostics</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+  </head>
+  <body>
+    <div class="page-bg" aria-hidden="true"></div>
+
+    <header class="site-header">
+      <div class="container header-inner">
+        <div class="brand">
+          <span class="brand-icon" aria-hidden="true">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.5" />
+              <path
+                d="M12 2v3M12 19v3M2 12h3M19 12h3"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+              />
+            </svg>
+          </span>
+          <div>
+            <h1>NetScope</h1>
+            <p class="tagline">DNS, IP addressing, and layered network diagnostics</p>
+          </div>
+        </div>
+        <nav class="header-nav" aria-label="Sections">
+          <a href="#analyze-section">Analyze</a>
+          <a href="#dns-section" class="nav-results hidden">DNS</a>
+          <a href="#ip-section" class="nav-results hidden">IP</a>
+          <a href="#network-section" class="nav-results hidden">Network</a>
+          <a href="#summary-section" class="nav-results hidden">Summary</a>
+        </nav>
+        <div class="header-status" aria-live="polite">
+          <span id="backend-dot" class="status-dot status-dot-loading"></span>
+          <span id="backend-status-text">Connecting…</span>
+        </div>
+      </div>
+    </header>
+
+    <main class="container">
+      <section id="analyze-section" class="card hero-card animate-in">
+        <h2>Analyze a target</h2>
+        <p class="muted hero-lead">
+          Enter a hostname or IP to measure DNS resolution, address families, and (when enabled by
+          your teammate) connectivity and web service checks.
+        </p>
+        <form id="analyze-form" class="analyze-form" autocomplete="off">
+          <div class="search-bar">
+            <input
+              type="text"
+              id="target-input"
+              name="target"
+              placeholder="example.com or 2001:db8::1"
+              spellcheck="false"
+              required
+              aria-label="Target hostname or IP"
+            />
+            <button type="submit" id="analyze-btn">
+              <span class="btn-label">Analyze</span>
+              <span class="btn-spinner hidden" aria-hidden="true"></span>
+            </button>
+          </div>
+          <label class="checkbox-row">
+            <input type="checkbox" id="include-transport" />
+            Include optional DNS UDP/TCP experiment (educational)
+          </label>
+          <p id="form-error" class="form-error hidden" role="alert"></p>
+        </form>
+      </section>
+
+      <section id="results-root" class="hidden">
+        <div class="summary-grid" id="summary-grid"></div>
+
+        <section id="dns-section" class="card card-interactive">
+          <div class="card-head">
+            <h2>DNS records</h2>
+            <span id="dns-rcode-badge" class="badge badge-pending">—</span>
+          </div>
+          <p id="dns-meta" class="muted dns-meta"></p>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Type</th>
+                  <th>Value</th>
+                  <th>TTL (s)</th>
+                  <th>Query note</th>
+                </tr>
+              </thead>
+              <tbody id="dns-table-body"></tbody>
+            </table>
+          </div>
+          <p id="dns-empty" class="empty-inline hidden">No resource records to display.</p>
+        </section>
+
+        <section id="ip-section" class="card card-interactive">
+          <h2>IP addressing</h2>
+          <div id="ip-grid" class="ip-grid"></div>
+        </section>
+
+        <section id="network-section" class="card card-interactive">
+          <h2>Network diagnostics</h2>
+          <div id="network-grid" class="network-grid"></div>
+        </section>
+
+        <section id="charts-section" class="card card-interactive">
+          <h2>Response times</h2>
+          <p class="muted section-lead">Single-run comparison from the latest analysis (not historical trends).</p>
+          <div class="chart-row">
+            <canvas id="timing-chart" height="120" aria-label="Response time comparison chart"></canvas>
+          </div>
+          <canvas id="rtt-chart" class="hidden" height="100" aria-label="Ping RTT samples chart"></canvas>
+        </section>
+
+        <section id="summary-section" class="card card-interactive">
+          <h2>Diagnostic summary</h2>
+          <div id="diagnosis-panel" class="diagnosis-panel"></div>
+          <ul id="suggestions-list" class="suggestions-list"></ul>
+        </section>
+
+        <section id="dns-transport-section" class="card card-interactive hidden">
+          <h2>DNS transport experiment</h2>
+          <p id="dns-transport-body" class="muted"></p>
+        </section>
+
+        <section id="history-section" class="card card-interactive">
+          <h2>History &amp; reports</h2>
+          <p id="history-placeholder" class="muted">
+            History list and PDF download appear when Member 2 enables
+            <code>GET /api/history</code> and <code>GET /api/report/&lt;id&gt;</code>.
+          </p>
+          <ul id="history-list" class="history-list hidden"></ul>
+        </section>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container"><p>NetScope · Computer Networks academic project</p></div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="{{ url_for('static', filename='js/app.js') }}" defer></script>
+  </body>
+</html>
