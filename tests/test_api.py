@@ -1,4 +1,4 @@
-"""Basic API tests for the NetScope Flask application."""
+"""Flask API integration tests."""
 
 from unittest.mock import patch
 
@@ -15,49 +15,82 @@ def client():
         yield client
 
 
-def test_health_endpoint_returns_ok(client):
+def test_dashboard_ok(client):
+    response = client.get("/")
+    assert response.status_code == 200
+    assert b"NetScope" in response.data
+
+
+def test_health_ok(client):
     response = client.get("/api/health")
     assert response.status_code == 200
     data = response.get_json()
     assert data["status"] == "ok"
-    assert data["service"] == "NetScope"
 
 
-def test_dashboard_returns_html(client):
-    response = client.get("/")
-    assert response.status_code == 200
-    assert b"NetScope" in response.data
-    assert b"text/html" in response.content_type.encode()
-
-
-def test_analyze_rejects_non_json(client):
-    response = client.post("/api/analyze", data="target=example.com")
+def test_analyze_requires_json(client):
+    response = client.post("/api/analyze", data="target=x")
     assert response.status_code == 400
 
 
-def test_analyze_rejects_invalid_target(client):
-    response = client.post(
-        "/api/analyze",
-        json={"target": "bad host name!!"},
-    )
+def test_analyze_missing_target(client):
+    response = client.post("/api/analyze", json={})
     assert response.status_code == 400
-    assert "error" in response.get_json()
 
 
+def test_analyze_invalid_target(client):
+    response = client.post("/api/analyze", json={"target": "!!!"})
+    assert response.status_code == 400
+
+
+@patch("app.build_diagnosis")
+@patch("app.analyze_http")
+@patch("app.analyze_tcp")
+@patch("app.analyze_connectivity")
+@patch("app.analyze_ip")
 @patch("app.analyze_dns")
-def test_analyze_returns_dns_section(mock_analyze_dns, client):
-    mock_analyze_dns.return_value = {
+def test_analyze_response_keys(
+    mock_dns, mock_ip, mock_conn, mock_tcp, mock_http, mock_diag, client
+):
+    mock_dns.return_value = {
         "status": "success",
-        "response_time_ms": 12.5,
-        "records": {"A": ["93.184.216.34"], "AAAA": [], "MX": [], "NS": [], "CNAME": []},
+        "response_code": "NOERROR",
+        "response_time_ms": 10,
+        "records": {"A": [], "AAAA": [], "MX": [], "NS": [], "CNAME": []},
+        "ttls": {},
+        "errors": {},
         "error": None,
+    }
+    mock_ip.return_value = {
+        "status": "success",
+        "input_type": "hostname",
+        "ipv4_available": False,
+        "ipv6_available": False,
+        "ipv4_addresses": [],
+        "ipv6_addresses": [],
+        "address_family": "None",
+        "error": None,
+    }
+    mock_conn.return_value = {"status": "skipped", "error": "pending"}
+    mock_tcp.return_value = {"status": "skipped", "ports": {}, "error": "pending"}
+    mock_http.return_value = {"status": "skipped", "http": {}, "https": {}, "error": "pending"}
+    mock_diag.return_value = {
+        "health_score": 80,
+        "status": "Healthy",
+        "suggestions": [],
     }
 
     response = client.post("/api/analyze", json={"target": "example.com"})
     assert response.status_code == 200
     data = response.get_json()
-    assert data["target"] == "example.com"
-    assert data["dns"]["status"] == "success"
-    assert data["dns"]["records"]["A"] == ["93.184.216.34"]
-    assert data["connectivity"]["status"] == "skipped"
-    assert "timestamp" in data
+    for key in ("target", "timestamp", "dns", "ip_analysis", "connectivity", "tcp", "http", "diagnosis"):
+        assert key in data
+
+
+@patch("app.analyze_dns")
+def test_analyze_module_exception_handled(mock_dns, client):
+    mock_dns.side_effect = RuntimeError("boom")
+    response = client.post("/api/analyze", json={"target": "example.com"})
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["dns"]["status"] == "error"

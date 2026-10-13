@@ -1,7 +1,11 @@
 """
-DNS analysis module (Member 1).
+DNS protocol analysis (Member 1).
 
-Resolves A, AAAA, MX, NS, and CNAME using dnspython and returns structured JSON.
+Demonstrates DNS as a name-to-resource mapping system: queries for common RR types
+(A, AAAA, MX, NS, CNAME), response codes (NOERROR, NXDOMAIN, SERVFAIL, TIMEOUT),
+and the difference between "no records of this type" versus total resolution failure.
+
+DNS success does not prove network reachability to the resolved addresses.
 """
 
 from __future__ import annotations
@@ -12,13 +16,21 @@ from typing import Any
 import dns.exception
 import dns.resolver
 
-from validators import is_ip_address
+from validators import is_ip_address, validate_target
 
 RECORD_TYPES = ("A", "AAAA", "MX", "NS", "CNAME")
 
 
 def _empty_records() -> dict[str, list[str]]:
     return {rtype: [] for rtype in RECORD_TYPES}
+
+
+def _empty_ttls() -> dict[str, int | None]:
+    return {rtype: None for rtype in RECORD_TYPES}
+
+
+def _empty_errors() -> dict[str, str | None]:
+    return {rtype: None for rtype in RECORD_TYPES}
 
 
 def _format_record(rtype: str, rdata: Any) -> str:
@@ -29,49 +41,54 @@ def _format_record(rtype: str, rdata: Any) -> str:
     return rdata.to_text()
 
 
-def _dns_success(
-    response_time_ms: float,
-    records: dict[str, list[str]],
+def _make_result(
+    *,
+    status: str,
+    response_time_ms: float | None,
+    response_code: str,
+    records: dict[str, list[str]] | None = None,
+    ttls: dict[str, int | None] | None = None,
+    errors: dict[str, str | None] | None = None,
     error: str | None = None,
-    status: str = "success",
 ) -> dict:
     return {
         "status": status,
-        "response_time_ms": round(response_time_ms, 2),
-        "records": records,
+        "response_time_ms": round(response_time_ms, 2) if response_time_ms is not None else None,
+        "response_code": response_code,
+        "records": records if records is not None else _empty_records(),
+        "ttls": ttls if ttls is not None else _empty_ttls(),
+        "errors": errors if errors is not None else _empty_errors(),
         "error": error,
     }
 
 
-def _dns_error(message: str, response_time_ms: float | None = None) -> dict:
-    return {
-        "status": "error",
-        "response_time_ms": response_time_ms,
-        "records": _empty_records(),
-        "error": message,
-    }
-
-
-def analyze_dns(target: str, timeout: float = 5.0) -> dict:
+def analyze_dns(target: str, timeout: float = 3.0) -> dict:
     """
-    Run DNS lookups for ``target``.
+    Query DNS for ``target`` (hostname) and return structured record data.
 
-    Parameters:
-        target: Hostname or IP (validated by the app layer).
-        timeout: Per-query timeout in seconds (applied to resolver timeout/lifetime).
-
-    Returns:
-        Dict with keys: status, response_time_ms, records, error.
+    IP literals skip RR lookups (``partial``) because DNS name queries apply to hostnames.
+    Each RR type is queried independently so one failure does not block others.
     """
+    ok, normalized, err = validate_target(target)
+    if not ok:
+        return _make_result(
+            status="error",
+            response_time_ms=None,
+            response_code="INVALID",
+            error=err,
+        )
+
+    target = normalized or target
+
     if is_ip_address(target):
-        return _dns_success(
-            0.0,
-            _empty_records(),
-            error=(
-                "Resource record lookups apply to hostnames; "
-                "target is an IP address (no A/AAAA/MX/NS/CNAME query performed)."
-            ),
+        return _make_result(
             status="partial",
+            response_time_ms=0.0,
+            response_code="N/A",
+            error=(
+                "Target is an IP address; DNS resource-record lookups apply to hostnames. "
+                "Use IP analysis for address family details."
+            ),
         )
 
     resolver = dns.resolver.Resolver()
@@ -79,46 +96,106 @@ def analyze_dns(target: str, timeout: float = 5.0) -> dict:
     resolver.lifetime = timeout
 
     records = _empty_records()
+    ttls = _empty_ttls()
+    errors = _empty_errors()
     start = time.perf_counter()
-    had_answer = False
-    last_error: str | None = None
-    fatal = False
+
+    overall_code = "NOERROR"
+    had_any_rr = False
+    query_errors: list[str] = []
+    fatal_code: str | None = None
 
     for rtype in RECORD_TYPES:
         try:
             answer = resolver.resolve(target, rtype)
+            rrset = answer.rrset
+            if rrset is not None:
+                ttls[rtype] = int(rrset.ttl)
             for rdata in answer:
                 records[rtype].append(_format_record(rtype, rdata))
             if records[rtype]:
-                had_answer = True
+                had_any_rr = True
+            else:
+                errors[rtype] = "No records of this type (NOERROR)."
         except dns.resolver.NXDOMAIN:
             elapsed = (time.perf_counter() - start) * 1000
-            return _dns_error(f"Domain '{target}' does not exist (NXDOMAIN).", elapsed)
+            return _make_result(
+                status="error",
+                response_time_ms=elapsed,
+                response_code="NXDOMAIN",
+                records=records,
+                ttls=ttls,
+                errors=errors,
+                error=f"The domain name '{target}' does not exist (NXDOMAIN).",
+            )
         except dns.resolver.NoAnswer:
-            continue
+            errors[rtype] = "No records of this type (NOERROR)."
         except dns.resolver.NoNameservers:
-            last_error = "No nameservers responded for this query."
-        except dns.exception.Timeout:
-            last_error = "DNS lookup timed out."
-            fatal = True
-            break
-        except dns.resolver.LifetimeTimeout:
-            last_error = "DNS lookup timed out."
-            fatal = True
-            break
+            errors[rtype] = "SERVFAIL: no nameservers available."
+            query_errors.append(f"{rtype}: SERVFAIL (no nameservers)")
+            overall_code = "SERVFAIL"
+        except (dns.exception.Timeout, dns.resolver.LifetimeTimeout):
+            errors[rtype] = "TIMEOUT"
+            query_errors.append(f"{rtype}: TIMEOUT")
+            overall_code = "TIMEOUT"
+        except dns.resolver.ServFail:
+            errors[rtype] = "SERVFAIL"
+            query_errors.append(f"{rtype}: SERVFAIL")
+            overall_code = "SERVFAIL"
         except dns.exception.DNSException as exc:
-            last_error = f"DNS error: {exc.__class__.__name__}."
+            label = exc.__class__.__name__
+            errors[rtype] = label
+            query_errors.append(f"{rtype}: {label}")
         except OSError as exc:
-            last_error = f"Network error during DNS lookup: {exc.strerror or exc}."
-            fatal = True
-            break
+            msg = exc.strerror or str(exc)
+            errors[rtype] = f"Network error: {msg}"
+            query_errors.append(f"{rtype}: network error")
+            overall_code = "SERVFAIL"
 
     elapsed = (time.perf_counter() - start) * 1000
 
-    if fatal and not had_answer:
-        return _dns_error(last_error or "DNS lookup failed.", elapsed)
+    if fatal_code:
+        overall_code = fatal_code
 
-    if not had_answer and last_error:
-        return _dns_success(elapsed, records, error=last_error, status="partial")
+    if overall_code in ("TIMEOUT", "SERVFAIL") and not had_any_rr:
+        return _make_result(
+            status="error",
+            response_time_ms=elapsed,
+            response_code=overall_code,
+            records=records,
+            ttls=ttls,
+            errors=errors,
+            error="; ".join(query_errors) if query_errors else "DNS resolution failed.",
+        )
 
-    return _dns_success(elapsed, records)
+    if query_errors and not had_any_rr:
+        return _make_result(
+            status="partial",
+            response_time_ms=elapsed,
+            response_code=overall_code,
+            records=records,
+            ttls=ttls,
+            errors=errors,
+            error="Some queries failed; see per-type errors.",
+        )
+
+    if query_errors:
+        return _make_result(
+            status="partial",
+            response_time_ms=elapsed,
+            response_code="NOERROR",
+            records=records,
+            ttls=ttls,
+            errors=errors,
+            error="Some record types returned errors; others succeeded.",
+        )
+
+    return _make_result(
+        status="success",
+        response_time_ms=elapsed,
+        response_code="NOERROR",
+        records=records,
+        ttls=ttls,
+        errors=errors,
+        error=None,
+    )

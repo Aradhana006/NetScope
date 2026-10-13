@@ -4,94 +4,152 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>NetScope — Network &amp; DNS Diagnostics</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
   </head>
   <body>
+    <div class="page-bg" aria-hidden="true"></div>
+
     <header class="site-header">
       <div class="container header-inner">
         <div class="brand">
-          <span class="brand-mark" aria-hidden="true"></span>
-          <h1>NetScope</h1>
+          <span class="brand-icon" aria-hidden="true">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.5" />
+              <path
+                d="M12 2v3M12 19v3M2 12h3M19 12h3"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+              />
+            </svg>
+          </span>
+          <div>
+            <h1>NetScope</h1>
+            <p class="tagline">DNS, IP addressing, and layered network diagnostics</p>
+          </div>
         </div>
-        <p class="tagline">Network &amp; DNS diagnostic dashboard</p>
+        <nav class="header-nav" aria-label="Sections">
+          <a href="#analyze-section">Analyze</a>
+          <a href="#dns-section" class="nav-results hidden">DNS</a>
+          <a href="#ip-section" class="nav-results hidden">IP</a>
+          <a href="#network-section" class="nav-results hidden">Network</a>
+          <a href="#summary-section" class="nav-results hidden">Summary</a>
+        </nav>
+        <div class="header-status" aria-live="polite">
+          <span id="backend-dot" class="status-dot status-dot-loading"></span>
+          <span id="backend-status-text">Connecting…</span>
+        </div>
       </div>
     </header>
 
     <main class="container">
-      <section class="card hero-card" aria-labelledby="analyze-heading">
-        <h2 id="analyze-heading">Analyze a target</h2>
-        <p class="muted">
-          Enter a domain name or IP address to run DNS analysis. Additional tests
-          (ping, TCP, HTTP) will appear as your teammate completes those modules.
+      <section id="analyze-section" class="card hero-card animate-in">
+        <h2>Analyze a target</h2>
+        <p class="muted hero-lead">
+          Enter a hostname or IP to measure DNS resolution, address families, and (when enabled by
+          your teammate) connectivity and web service checks.
         </p>
         <form id="analyze-form" class="analyze-form" autocomplete="off">
-          <label for="target-input">Target</label>
-          <div class="input-row">
+          <div class="search-bar">
             <input
               type="text"
               id="target-input"
               name="target"
-              placeholder="example.com"
+              placeholder="example.com or 2001:db8::1"
               spellcheck="false"
               required
+              aria-label="Target hostname or IP"
             />
-            <button type="submit" id="analyze-btn">Analyze</button>
+            <button type="submit" id="analyze-btn">
+              <span class="btn-label">Analyze</span>
+              <span class="btn-spinner hidden" aria-hidden="true"></span>
+            </button>
           </div>
+          <label class="checkbox-row">
+            <input type="checkbox" id="include-transport" />
+            Include optional DNS UDP/TCP experiment (educational)
+          </label>
           <p id="form-error" class="form-error hidden" role="alert"></p>
         </form>
       </section>
 
-      <section class="card status-card" aria-live="polite">
-        <h2>System status</h2>
-        <div id="backend-status" class="status-pill status-loading">Checking backend…</div>
-        <p id="backend-message" class="muted status-message"></p>
-      </section>
-
-      <div id="loading-panel" class="card loading-panel hidden" aria-live="polite">
-        <div class="spinner" aria-hidden="true"></div>
-        <p>Running diagnostics…</p>
-      </div>
-
-      <section id="results-section" class="hidden" aria-live="polite">
+      <section id="results-root" class="hidden">
         <div class="summary-grid" id="summary-grid"></div>
 
-        <section class="card" aria-labelledby="dns-heading">
-          <h2 id="dns-heading">DNS records</h2>
+        <section id="dns-section" class="card card-interactive">
+          <div class="card-head">
+            <h2>DNS records</h2>
+            <span id="dns-rcode-badge" class="badge badge-pending">—</span>
+          </div>
           <p id="dns-meta" class="muted dns-meta"></p>
           <div class="table-wrap">
-            <table class="data-table" id="dns-table">
+            <table class="data-table">
               <thead>
                 <tr>
-                  <th scope="col">Type</th>
-                  <th scope="col">Value</th>
+                  <th>Type</th>
+                  <th>Value</th>
+                  <th>TTL (s)</th>
+                  <th>Query note</th>
                 </tr>
               </thead>
               <tbody id="dns-table-body"></tbody>
             </table>
           </div>
-          <p id="dns-empty" class="muted empty-state hidden">No records returned for this type.</p>
+          <p id="dns-empty" class="empty-inline hidden">No resource records to display.</p>
         </section>
 
-        <section class="card" aria-labelledby="modules-heading">
-          <h2 id="modules-heading">Other diagnostics</h2>
-          <ul id="module-status-list" class="module-list"></ul>
+        <section id="ip-section" class="card card-interactive">
+          <h2>IP addressing</h2>
+          <div id="ip-grid" class="ip-grid"></div>
         </section>
-      </section>
 
-      <section id="results-empty" class="card placeholder-card">
-        <h2>Results</h2>
-        <p class="muted empty-state">
-          Submit a target above to view DNS records and module status.
-        </p>
+        <section id="network-section" class="card card-interactive">
+          <h2>Network diagnostics</h2>
+          <div id="network-grid" class="network-grid"></div>
+        </section>
+
+        <section id="charts-section" class="card card-interactive">
+          <h2>Response times</h2>
+          <p class="muted section-lead">Single-run comparison from the latest analysis (not historical trends).</p>
+          <div class="chart-row">
+            <canvas id="timing-chart" height="120" aria-label="Response time comparison chart"></canvas>
+          </div>
+          <canvas id="rtt-chart" class="hidden" height="100" aria-label="Ping RTT samples chart"></canvas>
+        </section>
+
+        <section id="summary-section" class="card card-interactive">
+          <h2>Diagnostic summary</h2>
+          <div id="diagnosis-panel" class="diagnosis-panel"></div>
+          <ul id="suggestions-list" class="suggestions-list"></ul>
+        </section>
+
+        <section id="dns-transport-section" class="card card-interactive hidden">
+          <h2>DNS transport experiment</h2>
+          <p id="dns-transport-body" class="muted"></p>
+        </section>
+
+        <section id="history-section" class="card card-interactive">
+          <h2>History &amp; reports</h2>
+          <p id="history-placeholder" class="muted">
+            History list and PDF download appear when Member 2 enables
+            <code>GET /api/history</code> and <code>GET /api/report/&lt;id&gt;</code>.
+          </p>
+          <ul id="history-list" class="history-list hidden"></ul>
+        </section>
       </section>
     </main>
 
     <footer class="site-footer">
-      <div class="container">
-        <p>NetScope — Computer Networks academic project</p>
-      </div>
+      <div class="container"><p>NetScope · Computer Networks academic project</p></div>
     </footer>
 
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <script src="{{ url_for('static', filename='js/app.js') }}" defer></script>
   </body>
 </html>
