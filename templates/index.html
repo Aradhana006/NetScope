@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NetScope — Network &amp; DNS Diagnostics</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="container header-inner">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <h1>NetScope</h1>
+        </div>
+        <p class="tagline">Network &amp; DNS diagnostic dashboard</p>
+      </div>
+    </header>
+
+    <main class="container">
+      <section class="card hero-card" aria-labelledby="analyze-heading">
+        <h2 id="analyze-heading">Analyze a target</h2>
+        <p class="muted">
+          Enter a domain name or IP address to run DNS analysis. Additional tests
+          (ping, TCP, HTTP) will appear as your teammate completes those modules.
+        </p>
+        <form id="analyze-form" class="analyze-form" autocomplete="off">
+          <label for="target-input">Target</label>
+          <div class="input-row">
+            <input
+              type="text"
+              id="target-input"
+              name="target"
+              placeholder="example.com"
+              spellcheck="false"
+              required
+            />
+            <button type="submit" id="analyze-btn">Analyze</button>
+          </div>
+          <p id="form-error" class="form-error hidden" role="alert"></p>
+        </form>
+      </section>
+
+      <section class="card status-card" aria-live="polite">
+        <h2>System status</h2>
+        <div id="backend-status" class="status-pill status-loading">Checking backend…</div>
+        <p id="backend-message" class="muted status-message"></p>
+      </section>
+
+      <div id="loading-panel" class="card loading-panel hidden" aria-live="polite">
+        <div class="spinner" aria-hidden="true"></div>
+        <p>Running diagnostics…</p>
+      </div>
+
+      <section id="results-section" class="hidden" aria-live="polite">
+        <div class="summary-grid" id="summary-grid"></div>
+
+        <section class="card" aria-labelledby="dns-heading">
+          <h2 id="dns-heading">DNS records</h2>
+          <p id="dns-meta" class="muted dns-meta"></p>
+          <div class="table-wrap">
+            <table class="data-table" id="dns-table">
+              <thead>
+                <tr>
+                  <th scope="col">Type</th>
+                  <th scope="col">Value</th>
+                </tr>
+              </thead>
+              <tbody id="dns-table-body"></tbody>
+            </table>
+          </div>
+          <p id="dns-empty" class="muted empty-state hidden">No records returned for this type.</p>
+        </section>
+
+        <section class="card" aria-labelledby="modules-heading">
+          <h2 id="modules-heading">Other diagnostics</h2>
+          <ul id="module-status-list" class="module-list"></ul>
+        </section>
+      </section>
+
+      <section id="results-empty" class="card placeholder-card">
+        <h2>Results</h2>
+        <p class="muted empty-state">
+          Submit a target above to view DNS records and module status.
+        </p>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container">
+        <p>NetScope — Computer Networks academic project</p>
+      </div>
+    </footer>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}" defer></script>
+  </body>
+</html>
