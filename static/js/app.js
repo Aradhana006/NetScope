@@ -468,6 +468,57 @@
       ")";
   }
 
+  function renderHistoryActions(data) {
+    var list = $("history-list");
+    var placeholder = $("history-placeholder");
+    if (!list) return;
+    list.innerHTML = "";
+    if (data && data.id) {
+      if (placeholder) placeholder.classList.add("hidden");
+      list.classList.remove("hidden");
+      var item = document.createElement("li");
+      item.innerHTML =
+        "Latest analysis #" +
+        escapeHtml(data.id) +
+        ' — <a href="/api/report/' +
+        escapeHtml(data.id) +
+        '">Download PDF</a>';
+      list.appendChild(item);
+    }
+  }
+
+  async function loadHistoryList() {
+    var list = $("history-list");
+    var placeholder = $("history-placeholder");
+    if (!list) return;
+    try {
+      var response = await fetch("/api/history?limit=10");
+      if (!response.ok) return;
+      var payload = await response.json();
+      var items = payload.items || [];
+      if (!items.length) return;
+      if (placeholder) placeholder.classList.add("hidden");
+      list.classList.remove("hidden");
+      list.innerHTML = items
+        .map(function (row) {
+          return (
+            "<li>" +
+            escapeHtml(row.created_at || "") +
+            " · " +
+            escapeHtml(row.target || "") +
+            " · score " +
+            escapeHtml(row.health_score != null ? row.health_score : "—") +
+            ' · <a href="/api/report/' +
+            escapeHtml(row.id) +
+            '">PDF</a></li>'
+          );
+        })
+        .join("");
+    } catch (e) {
+      /* history optional until backend available */
+    }
+  }
+
   function renderAll(data) {
     showResultsNav();
     renderSummary(data);
@@ -477,12 +528,15 @@
     renderDiagnosis(data.diagnosis);
     renderCharts(data);
     renderTransport(data.dns_transport);
+    renderHistoryActions(data);
+    loadHistoryList();
   }
 
   /* --- Init --- */
 
   document.addEventListener("DOMContentLoaded", function () {
     checkBackendHealth();
+    loadHistoryList();
     var form = $("analyze-form");
     if (form) {
       form.addEventListener("submit", function (e) {
