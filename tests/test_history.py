@@ -11,7 +11,7 @@ def test_save_list_and_get(tmp_path):
         "diagnosis": {"health_score": 88, "status": "Healthy", "suggestions": []},
         "dns": {},
     }
-    row_id = save_analysis(payload, db_path)
+    row_id = save_analysis(payload, db_path, user_id=1)
     assert row_id == 1
 
     items = list_analyses(limit=10, db_path=db_path)

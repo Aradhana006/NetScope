@@ -25,6 +25,11 @@ def test_diagnosis_healthy_scenario():
     result = build_diagnosis("example.com", m["dns"], m["connectivity"], m["tcp"], m["http"])
     assert result["status"] == "Healthy"
     assert result["health_score"] >= 75
+    assert result.get("insights")
+    findings = result.get("findings") or []
+    assert len(findings) == 4
+    assert findings[0]["result"] == "passed"
+    assert findings[3]["check"] == "HTTPS"
 
 
 def test_diagnosis_unavailable_on_dns_failure():
@@ -51,6 +56,8 @@ def test_diagnosis_ping_fail_https_ok():
     result = build_diagnosis("example.com", m["dns"], conn, m["tcp"], m["http"])
     assert result["status"] in ("Degraded", "Healthy")
     assert any("ICMP" in s for s in result["suggestions"])
+    ping_row = next(f for f in result["findings"] if f["check"] == "ICMP / Ping")
+    assert ping_row["result"] == "inconclusive"
 
 
 def test_diagnosis_skipped_modules_neutral():

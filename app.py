@@ -1,26 +1,28 @@
 """
 NetScope Flask application entry point.
-
-Member 1: DNS, IP, dashboard. Member 2: connectivity, TCP, HTTP, diagnosis, history, PDF.
 """
 
 from __future__ import annotations
 
 import os
+import secrets
 from datetime import datetime, timezone
 from io import BytesIO
 from typing import Callable
 
-from flask import Flask, jsonify, render_template, request, send_file
+from flask import Flask, jsonify, redirect, render_template, request, send_file, session, url_for
 
-from database.history import get_analysis, init_db, list_analyses, save_analysis
+from database.auth import authenticate, create_user, get_user
+from database.history import get_analysis, init_db, list_analyses, save_analysis, user_stats
 from diagnostics.connectivity import analyze_connectivity
 from diagnostics.diagnosis import build_diagnosis
 from diagnostics.dns_check import analyze_dns
 from diagnostics.dns_transport import compare_dns_udp_tcp
+from diagnostics.history_compare import compare_analyses
 from diagnostics.http_check import analyze_http
 from diagnostics.ip_analysis import analyze_ip
 from diagnostics.tcp_check import analyze_tcp
+from diagnostics.traceroute_check import analyze_traceroute
 from reports.pdf_report import generate_pdf_report
 from validators import validate_target
 
@@ -34,9 +36,21 @@ def _run_diagnostic(run: Callable[..., dict], *args, **kwargs) -> dict:
         return {"status": "error", "error": "Diagnostic module failed unexpectedly."}
 
 
+def _current_user_id() -> int | None:
+    uid = session.get("user_id")
+    return int(uid) if uid is not None else None
+
+
+def _load_secret_key() -> str:
+    """Use NETSCOPE_SECRET_KEY when set; ignore empty env values."""
+    key = (os.environ.get("NETSCOPE_SECRET_KEY") or "").strip()
+    return key or secrets.token_hex(32)
+
+
 def create_app() -> Flask:
     app = Flask(__name__)
     app.config.setdefault("DATABASE_PATH", os.path.join("instance", "netscope.db"))
+    app.config["SECRET_KEY"] = _load_secret_key()
 
     @app.before_request
     def _ensure_db():
@@ -45,24 +59,123 @@ def create_app() -> Flask:
             app.config["_DB_READY"] = True
 
     @app.get("/")
+    def landing():
+        if _current_user_id():
+            return redirect(url_for("dashboard"))
+        return render_template("landing.html")
+
+    @app.get("/login")
+    def login_page():
+        uid = _current_user_id()
+        user = get_user(app.config["DATABASE_PATH"], uid) if uid else None
+        return render_template("login.html", current_user=user)
+
+    @app.get("/signup")
+    def signup_page():
+        if _current_user_id():
+            return redirect(url_for("dashboard"))
+        return render_template("signup.html")
+
+    @app.get("/dashboard")
     def dashboard():
-        return render_template("index.html")
+        user = get_user(app.config["DATABASE_PATH"], _current_user_id()) if _current_user_id() else None
+        return render_template("dashboard.html", user=user, is_guest=user is None)
 
     @app.get("/api/health")
     def health():
-        return jsonify(
-            {"status": "ok", "service": "NetScope", "message": "Backend is running."}
+        return jsonify({"status": "ok", "service": "NetScope"})
+
+    @app.get("/api/auth/me")
+    def auth_me():
+        uid = _current_user_id()
+        if not uid:
+            return jsonify({"logged_in": False, "is_guest": True, "user": None})
+        user = get_user(app.config["DATABASE_PATH"], uid)
+        return jsonify({"logged_in": True, "is_guest": False, "user": user})
+
+    @app.post("/api/auth/register")
+    def auth_register():
+        data = request.get_json(silent=True) or {}
+        ok, err, user_id = create_user(
+            app.config["DATABASE_PATH"],
+            data.get("email", ""),
+            data.get("password", ""),
+            data.get("full_name", ""),
+            datetime.now(timezone.utc).isoformat(),
         )
+        if not ok:
+            return jsonify({"error": err}), 400
+        session["user_id"] = user_id
+        user = get_user(app.config["DATABASE_PATH"], user_id)
+        return jsonify({"user": user})
+
+    @app.post("/api/auth/login")
+    def auth_login():
+        data = request.get_json(silent=True) or {}
+        ok, err, user = authenticate(
+            app.config["DATABASE_PATH"],
+            data.get("email", ""),
+            data.get("password", ""),
+        )
+        if not ok:
+            return jsonify({"error": err}), 401
+        session["user_id"] = user["id"]
+        return jsonify({"user": user})
+
+    @app.post("/api/auth/logout")
+    def auth_logout():
+        session.clear()
+        return jsonify({"status": "ok"})
+
+    @app.get("/api/stats")
+    def stats():
+        uid = _current_user_id()
+        if not uid:
+            return jsonify({"error": "Login required for personal stats."}), 401
+        return jsonify(user_stats(app.config["DATABASE_PATH"], uid))
 
     @app.get("/api/history")
     def history():
+        uid = _current_user_id()
+        if not uid:
+            return jsonify({"items": [], "requires_login": True})
         limit = request.args.get("limit", default=20, type=int)
-        rows = list_analyses(limit=limit, db_path=app.config["DATABASE_PATH"])
-        return jsonify({"items": rows})
+        return jsonify({"items": list_analyses(limit=limit, db_path=app.config["DATABASE_PATH"], user_id=uid)})
+
+    @app.get("/api/history/<int:analysis_id>")
+    def history_item(analysis_id: int):
+        uid = _current_user_id()
+        if not uid:
+            return jsonify({"error": "Login required."}), 401
+        stored = get_analysis(analysis_id, app.config["DATABASE_PATH"], user_id=uid)
+        if not stored:
+            return jsonify({"error": "Analysis not found."}), 404
+        stored["id"] = analysis_id
+        return jsonify(stored)
+
+    @app.get("/api/compare")
+    def compare():
+        uid = _current_user_id()
+        if not uid:
+            return jsonify({"error": "Login required to compare history."}), 401
+        baseline_id = request.args.get("baseline_id", type=int)
+        current_id = request.args.get("current_id", type=int)
+        if not baseline_id or not current_id:
+            return jsonify({"error": "baseline_id and current_id are required."}), 400
+        baseline = get_analysis(baseline_id, app.config["DATABASE_PATH"], user_id=uid)
+        current = get_analysis(current_id, app.config["DATABASE_PATH"], user_id=uid)
+        if not baseline or not current:
+            return jsonify({"error": "One or both analyses were not found."}), 404
+        baseline["id"] = baseline_id
+        current["id"] = current_id
+        return jsonify(compare_analyses(baseline, current))
 
     @app.get("/api/report/<int:analysis_id>")
     def report(analysis_id: int):
-        stored = get_analysis(analysis_id, app.config["DATABASE_PATH"])
+        uid = _current_user_id()
+        stored = get_analysis(analysis_id, app.config["DATABASE_PATH"], user_id=uid)
+        if not stored and uid:
+            stored = get_analysis(analysis_id, app.config["DATABASE_PATH"], user_id=None)
         if not stored:
             return jsonify({"error": "Analysis not found."}), 404
         pdf_bytes = generate_pdf_report(stored)
@@ -73,11 +186,24 @@ def create_app() -> Flask:
             download_name=f"netscope-report-{analysis_id}.pdf",
         )
 
+    @app.post("/api/report/export")
+    def report_export():
+        """Allow guests to export the current analysis as PDF without saving."""
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({"error": "Invalid payload."}), 400
+        pdf_bytes = generate_pdf_report(data)
+        return send_file(
+            BytesIO(pdf_bytes),
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name="netscope-report.pdf",
+        )
+
     @app.post("/api/analyze")
     def analyze():
         if not request.is_json:
             return jsonify({"error": "Request body must be JSON."}), 400
-
         payload = request.get_json(silent=True)
         if not isinstance(payload, dict):
             return jsonify({"error": "Invalid JSON payload."}), 400
@@ -110,12 +236,21 @@ def create_app() -> Flask:
             "diagnosis": diagnosis,
         }
 
-        if payload.get("include_dns_transport") is True:
+        if payload.get("include_dns_transport", True):
             response["dns_transport"] = _run_diagnostic(compare_dns_udp_tcp, target)
+        if payload.get("include_traceroute", False):
+            response["traceroute"] = _run_diagnostic(analyze_traceroute, target)
 
-        if payload.get("save_history", True):
-            analysis_id = save_analysis(response, app.config["DATABASE_PATH"])
-            response["id"] = analysis_id
+        uid = _current_user_id()
+        wants_save = payload.get("save_history", True)
+        response["saved"] = False
+        response["requires_login_to_save"] = False
+
+        if wants_save and uid:
+            response["id"] = save_analysis(response, app.config["DATABASE_PATH"], user_id=uid)
+            response["saved"] = True
+        elif wants_save and not uid:
+            response["requires_login_to_save"] = True
 
         return jsonify(response)
 

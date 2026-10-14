@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+  <head>
+
+    <meta charset="UTF-8" />
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <title>NetScope</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap" rel="stylesheet" />
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+
+  </head>
+
+  <body
+
+    class="app-body"
+
+    data-guest="{{ 'true' if is_guest else 'false' }}"
+
+    data-user-name="{{ user.full_name if user else 'Guest' }}"
+
+    data-user-email="{{ user.email if user else '' }}"
+
+  >
+
+    <div class="app-bg" aria-hidden="true"></div>
+
+    <div class="app-shell">
+
+      <aside class="sidebar">
+
+        <a href="{{ url_for('landing') }}" class="logo">Net<span>Scope</span></a>
+
+        <nav class="side-nav" id="side-nav">
+
+          <a href="#" data-view="dashboard" class="active"><span class="nav-ico">▣</span> Dashboard</a>
+
+          <a href="#" data-view="analyze"><span class="nav-ico">＋</span> New Analysis</a>
+
+          <a href="#" data-view="results"><span class="nav-ico">◎</span> Analysis Results</a>
+
+          <a href="#" data-view="history"><span class="nav-ico">⏱</span> History</a>
+
+          <a href="#" data-view="reports"><span class="nav-ico">📄</span> Reports</a>
+
+        </nav>
+
+        <div class="sidebar-foot">
+
+          {% if is_guest %}
+
+          <p class="guest-pill">Guest mode</p>
+
+          <a class="btn-primary full" href="{{ url_for('login_page') }}">Log in</a>
+
+          {% else %}
+
+          <p class="user-pill">{{ user.full_name }}</p>
+
+          <button type="button" id="logout-btn" class="btn-ghost full">Logout</button>
+
+          {% endif %}
+
+        </div>
+
+      </aside>
+
+
+
+      <div class="main-area">
+
+        <header class="app-topbar">
+
+          <div class="topbar-title">
+
+            <p class="topbar-eyebrow" id="page-eyebrow">Dashboard</p>
+
+            <h1 id="page-title">{% if is_guest %}Welcome{% else %}Welcome back{% endif %}</h1>
+
+          </div>
+
+          <div class="topbar-user">
+
+            <div class="avatar" title="{{ user.full_name if user else 'Guest' }}">{{ (user.full_name[0] if user and user.full_name else 'G') | upper }}</div>
+
+          </div>
+
+        </header>
+
+
+
+        <div id="guest-banner" class="guest-banner {% if not is_guest %}hidden{% endif %}">
+
+          Guest mode — sign in to save history and reports.
+
+          <a href="{{ url_for('signup_page') }}">Sign up free</a>
+
+        </div>
+
+
+
+        <!-- Dashboard home -->
+
+        <section id="view-dashboard" class="app-view">
+
+          <div class="stats-row {% if is_guest %}hidden{% endif %}" id="stats-row">
+
+            <div class="stat-card"><span class="stat-ico blue">📊</span><p>Total Analyses</p><strong id="stat-total">0</strong></div>
+
+            <div class="stat-card"><span class="stat-ico purple">📁</span><p>Reports Saved</p><strong id="stat-reports">0</strong></div>
+
+            <div class="stat-card"><span class="stat-ico cyan">📅</span><p>This Week</p><strong id="stat-week">0</strong></div>
+
+            <div class="stat-card"><span class="stat-ico amber">⚠</span><p>Issues Found</p><strong id="stat-issues">0</strong></div>
+
+          </div>
+
+
+
+          <div class="hero-analyze-wrap">
+
+            <div class="panel hero-analyze">
+
+              <div class="hero-analyze-inner">
+
+                <div>
+
+                  <span class="panel-tag">Quick scan</span>
+
+                  <h2>Run a New Analysis</h2>
+
+                  <p class="subtle">DNS, connectivity, TCP, and HTTP checks in one run.</p>
+
+                  <form id="dashboard-quick-form" class="input-group" autocomplete="off">
+
+                    <input id="dashboard-target-input" type="text" placeholder="Enter domain or IP — e.g. google.com" required />
+
+                    <button type="submit" class="btn-primary">Analyze</button>
+
+                  </form>
+
+                </div>
+
+                <div class="hero-orbit-mini" aria-hidden="true"><span></span><span></span><span></span></div>
+
+              </div>
+
+            </div>
+
+          </div>
+
+
+
+          <div class="capability-grid">
+
+            <article class="cap-card"><span class="cap-icon">🌐</span><h3>DNS</h3><p>Records, TTL, UDP/TCP</p></article>
+
+            <article class="cap-card"><span class="cap-icon">📡</span><h3>Network</h3><p>Ping, ports, routes</p></article>
+
+            <article class="cap-card"><span class="cap-icon">🔒</span><h3>HTTP/S</h3><p>Status &amp; latency</p></article>
+
+            <article class="cap-card"><span class="cap-icon">💡</span><h3>Insights</h3><p>Health score &amp; tips</p></article>
+
+          </div>
+
+
+
+          <div class="panel">
+
+            <div class="panel-head"><h2>Recent Analyses</h2></div>
+
+            <div class="table-wrap">
+
+              <table class="results-table data-table">
+
+                <thead><tr><th>Target</th><th>Date &amp; Time</th><th>Status</th><th>Health</th><th>Actions</th></tr></thead>
+
+                <tbody id="recent-analyses-body"><tr><td colspan="5" class="empty-cell">No analyses yet. Run your first scan above.</td></tr></tbody>
+
+              </table>
+
+            </div>
+
+          </div>
+
+        </section>
+
+
+
+        <!-- New analysis -->
+
+        <section id="view-analyze" class="app-view hidden">
+
+          <div class="panel glow analyze-panel hero-analyze" id="analyze-section">
+
+            <span class="panel-tag">Advanced</span>
+
+            <h2>New Analysis</h2>
+
+            <p class="subtle">Full diagnostic run with optional DNS transport and traceroute.</p>
+
+            <form id="analyze-form" autocomplete="off">
+
+              <div class="input-group">
+
+                <input id="target-input" type="text" placeholder="Enter domain or IP — e.g. google.com" required />
+
+                <button type="submit" id="analyze-btn" class="btn-primary"><span class="btn-label">Analyze</span><span class="btn-spinner hidden"></span></button>
+
+              </div>
+
+              <div class="option-row">
+
+                <label><input type="checkbox" id="include-transport" checked /> DNS UDP/TCP comparison</label>
+
+                <label><input type="checkbox" id="include-traceroute" /> Traceroute path</label>
+
+              </div>
+
+              <p id="form-error" class="form-error hidden"></p>
+
+            </form>
+
+          </div>
+
+        </section>
+
+
+
+        <!-- Analysis results -->
+
+        <section id="view-results" class="app-view hidden">
+
+          <div id="results-root" class="results-layout hidden">
+
+            <div class="results-header">
+
+              <div>
+
+                <p class="subtle">Analysis Results</p>
+
+                <h2 id="results-target-title">—</h2>
+
+              </div>
+
+              <div class="action-row">
+
+                <a id="pdf-link" class="btn-primary hidden" href="#">Download PDF</a>
+
+                <button type="button" id="pdf-export-btn" class="btn-ghost hidden">Export PDF</button>
+
+              </div>
+
+            </div>
+
+
+
+            <div class="status-chips" id="status-chips"></div>
+
+
+
+            <div class="result-tabs" role="tablist">
+
+              <button type="button" class="result-tab active" data-tab="overview">Overview</button>
+
+              <button type="button" class="result-tab" data-tab="dns">DNS Records</button>
+
+              <button type="button" class="result-tab" data-tab="ip">IP Analysis</button>
+
+              <button type="button" class="result-tab" data-tab="network">Connectivity</button>
+
+              <button type="button" class="result-tab" data-tab="diagnosis">Diagnosis</button>
+
+            </div>
+
+
+
+            <div class="tab-panel active" data-panel="overview">
+
+              <div class="overview-grid">
+
+                <div class="panel findings-panel">
+
+                  <h3>Unified findings</h3>
+
+                  <p class="subtle findings-desc">Each layer links measured evidence to a suggested next step (causes are hypotheses, not confirmed root cause).</p>
+
+                  <div class="table-wrap"><table class="results-table findings-table"><thead><tr><th>Result</th><th>Check</th><th>Evidence</th><th>Possible causes</th><th>Next step</th></tr></thead><tbody id="findings-table-body"></tbody></table></div>
+
+                </div>
+
+                <div class="panel health-panel">
+
+                  <p class="health-label">Health Score</p>
+
+                  <div class="health-gauge-wrap">
+
+                    <canvas id="health-chart" aria-hidden="true"></canvas>
+
+                    <div class="health-score-ring lg" id="health-score">—</div>
+
+                  </div>
+
+                  <p class="health-status" id="health-status">—</p>
+
+                  <p class="health-meta subtle" id="health-meta"></p>
+
+                  <div class="health-legend"><span class="legend-good">Good</span><span class="legend-warn">Minor</span><span class="legend-bad">Issues</span></div>
+
+                </div>
+
+              </div>
+
+              <div class="panel" id="charts-section">
+
+                <div class="panel-head"><div><h3>Performance charts</h3><p class="subtle chart-section-desc">Latency breakdown across layers</p></div></div>
+
+                <div class="charts-grid">
+
+                  <div class="chart-card">
+
+                    <h4>DNS by record type</h4>
+
+                    <div class="chart-canvas-box"><canvas id="dns-chart"></canvas></div>
+
+                  </div>
+
+                  <div class="chart-card">
+
+                    <h4>Service latency</h4>
+
+                    <div class="chart-canvas-box"><canvas id="timing-chart"></canvas></div>
+
+                  </div>
+
+                  <div class="chart-card">
+
+                    <h4>Ping RTT samples</h4>
+
+                    <div class="chart-canvas-box"><canvas id="rtt-chart"></canvas></div>
+
+                    <p id="rtt-chart-empty" class="chart-empty hidden">No ping samples for this target.</p>
+
+                  </div>
+
+                  <div class="chart-card">
+
+                    <h4>HTTP stack timing</h4>
+
+                    <div class="chart-canvas-box"><canvas id="http-chart"></canvas></div>
+
+                  </div>
+
+                </div>
+
+              </div>
+
+            </div>
+
+
+
+            <div class="tab-panel hidden" data-panel="dns">
+
+              <section class="panel" id="dns-section">
+
+                <div class="panel-head"><h3>DNS records</h3><span id="dns-rcode-badge" class="chip">—</span></div>
+
+                <p id="dns-meta" class="subtle"></p>
+
+                <div class="table-wrap"><table class="results-table"><thead><tr><th>Type</th><th>Value</th><th>TTL</th><th>Note</th></tr></thead><tbody id="dns-table-body"></tbody></table></div>
+
+              </section>
+
+              <section class="panel hidden" id="dns-transport-section"><h3>DNS transport comparison</h3><div id="transport-grid" class="metric-grid"></div></section>
+
+            </div>
+
+
+
+            <div class="tab-panel hidden" data-panel="ip">
+
+              <section class="panel" id="ip-section"><h3>IP addressing</h3><div id="ip-grid" class="metric-grid"></div></section>
+
+            </div>
+
+
+
+            <div class="tab-panel hidden" data-panel="network">
+
+              <section class="panel" id="network-section"><h3>Connectivity &amp; services</h3><div id="network-grid" class="metric-grid"></div></section>
+
+              <section class="panel hidden" id="traceroute-section"><h3>Traceroute path</h3><div class="table-wrap"><table class="results-table"><thead><tr><th>Hop</th><th>Address</th><th>RTT (ms)</th></tr></thead><tbody id="traceroute-body"></tbody></table></div></section>
+
+            </div>
+
+
+
+            <div class="tab-panel hidden" data-panel="diagnosis">
+
+              <section class="panel diagnosis-hero" id="summary-section">
+
+                <h3>Explainable diagnosis</h3>
+
+                <p class="subtle">Same unified findings as Overview — use History compare to see which layer changed between runs.</p>
+
+                <div class="table-wrap"><table class="results-table findings-table"><thead><tr><th>Result</th><th>Check</th><th>Evidence</th><th>Possible causes</th><th>Next step</th></tr></thead><tbody id="findings-table-body-diagnosis"></tbody></table></div>
+
+                <details class="findings-more"><summary>Additional notes</summary><div id="insights-accordion" class="accordion"></div></details>
+
+              </section>
+
+            </div>
+
+          </div>
+
+          <div id="results-empty" class="panel empty-state">
+
+            <h2>No results yet</h2>
+
+            <p class="subtle">Run an analysis from Dashboard or New Analysis.</p>
+
+            <button type="button" class="btn-primary" data-view-jump="analyze">Start analysis</button>
+
+          </div>
+
+        </section>
+
+
+
+        <!-- History -->
+
+        <section id="view-history" class="app-view hidden">
+
+          <div class="panel">
+
+            <div class="panel-head">
+
+              <h2>History</h2>
+
+              <input type="search" id="history-search" class="search-input" placeholder="Search by domain or IP…" />
+
+            </div>
+
+            <div class="table-wrap">
+
+              <table class="results-table data-table">
+
+                <thead><tr><th>Target</th><th>Date &amp; Time</th><th>Status</th><th>Health</th><th>Actions</th></tr></thead>
+
+                <tbody id="history-table-body"><tr><td colspan="5" class="empty-cell">{% if is_guest %}Log in to view saved history.{% else %}No saved runs yet.{% endif %}</td></tr></tbody>
+
+              </table>
+
+            </div>
+
+          </div>
+
+          <div class="panel" id="history-section">
+
+            <h2>Compare runs</h2>
+
+            <div class="compare-row">
+
+              <select id="compare-baseline"></select>
+
+              <select id="compare-current"></select>
+
+              <button type="button" id="compare-btn" class="btn-secondary">Compare</button>
+
+            </div>
+
+            <div id="compare-results" class="compare-results hidden"></div>
+
+            <ul id="history-list" class="history-list hidden"></ul>
+
+          </div>
+
+        </section>
+
+
+
+        <!-- Reports -->
+
+        <section id="view-reports" class="app-view hidden">
+
+          <div class="panel">
+
+            <div class="panel-head">
+
+              <h2>Report preview</h2>
+
+              <div class="action-row">
+
+                <a id="report-download-link" class="btn-primary hidden" href="#">Download PDF</a>
+
+                <button type="button" id="report-export-btn" class="btn-ghost hidden">Export current PDF</button>
+
+              </div>
+
+            </div>
+
+            <div class="report-preview" id="report-preview">
+
+              <div class="report-paper">
+
+                <div class="report-brand">Net<span>Scope</span></div>
+
+                <h3>Network Diagnostic Report</h3>
+
+                <p class="report-meta" id="report-meta">Run an analysis to generate a report preview.</p>
+
+                <div class="report-score-badge" id="report-score">—</div>
+
+                <p class="report-summary" id="report-summary">Summary will appear here after analysis.</p>
+
+              </div>
+
+            </div>
+
+          </div>
+
+        </section>
+
+
+
+      </div>
+
+    </div>
+
+
+
+    <div id="login-modal" class="modal hidden" role="dialog" aria-modal="true">
+
+      <div class="modal-card">
+
+        <h3>Save to history?</h3>
+
+        <p>Create a free account to save analyses, compare runs, and keep PDF reports.</p>
+
+        <div class="modal-actions">
+
+          <a class="btn-primary" href="{{ url_for('signup_page') }}">Sign up</a>
+
+          <a class="btn-ghost" href="{{ url_for('login_page') }}">Log in</a>
+
+          <button type="button" id="modal-close" class="btn-ghost">Continue as guest</button>
+
+        </div>
+
+      </div>
+
+    </div>
+
+
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}" defer></script>
+
+  </body>
+
+</html>
+

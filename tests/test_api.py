@@ -11,6 +11,7 @@ from app import create_app
 def client(tmp_path):
     app = create_app()
     app.config["TESTING"] = True
+    app.config["SECRET_KEY"] = "test-secret-key"
     app.config["DATABASE_PATH"] = str(tmp_path / "test.db")
     with app.test_client() as client:
         yield client
@@ -79,6 +80,7 @@ def test_analyze_response_keys(
         "health_score": 80,
         "status": "Healthy",
         "suggestions": [],
+        "insights": [],
     }
 
     response = client.post("/api/analyze", json={"target": "example.com"})
@@ -121,9 +123,13 @@ def test_history_and_report_endpoints(
     mock_http.return_value = {"status": "skipped", "http": {}, "https": {}}
     mock_diag.return_value = {"health_score": 70, "status": "Degraded", "suggestions": ["test"]}
 
+    with client.session_transaction() as sess:
+        sess["user_id"] = 1
     analyze_resp = client.post("/api/analyze", json={"target": "example.com"})
     assert analyze_resp.status_code == 200
-    analysis_id = analyze_resp.get_json()["id"]
+    body = analyze_resp.get_json()
+    assert body.get("saved") is True
+    analysis_id = body["id"]
 
     history_resp = client.get("/api/history")
     assert history_resp.status_code == 200

@@ -3,152 +3,131 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>NetScope — Network &amp; DNS Diagnostics</title>
+    <title>NetScope — Network Diagnostics</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
-      rel="stylesheet"
-    />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
   </head>
   <body>
-    <div class="page-bg" aria-hidden="true"></div>
-
     <header class="site-header">
       <div class="container header-inner">
         <div class="brand">
-          <span class="brand-icon" aria-hidden="true">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
-              <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.5" />
-              <path
-                d="M12 2v3M12 19v3M2 12h3M19 12h3"
-                stroke="currentColor"
-                stroke-width="1.5"
-                stroke-linecap="round"
-              />
-            </svg>
-          </span>
+          <div class="brand-badge">NS</div>
           <div>
             <h1>NetScope</h1>
-            <p class="tagline">DNS, IP addressing, and layered network diagnostics</p>
+            <p class="tagline">Network &amp; DNS diagnostic console</p>
           </div>
         </div>
-        <nav class="header-nav" aria-label="Sections">
-          <a href="#analyze-section">Analyze</a>
-          <a href="#dns-section" class="nav-results hidden">DNS</a>
-          <a href="#ip-section" class="nav-results hidden">IP</a>
-          <a href="#network-section" class="nav-results hidden">Network</a>
-          <a href="#summary-section" class="nav-results hidden">Summary</a>
-        </nav>
         <div class="header-status" aria-live="polite">
-          <span id="backend-dot" class="status-dot status-dot-loading"></span>
-          <span id="backend-status-text">Connecting…</span>
+          <span id="backend-dot" class="status-dot"></span>
+          <span id="backend-status-text">Checking…</span>
         </div>
       </div>
     </header>
 
     <main class="container">
-      <section id="analyze-section" class="card hero-card animate-in">
-        <h2>Analyze a target</h2>
-        <p class="muted hero-lead">
-          Enter a hostname or IP to measure DNS resolution, address families, and (when enabled by
-          your teammate) connectivity and web service checks.
-        </p>
-        <form id="analyze-form" class="analyze-form" autocomplete="off">
-          <div class="search-bar">
-            <input
-              type="text"
-              id="target-input"
-              name="target"
-              placeholder="example.com or 2001:db8::1"
-              spellcheck="false"
-              required
-              aria-label="Target hostname or IP"
-            />
-            <button type="submit" id="analyze-btn">
-              <span class="btn-label">Analyze</span>
-              <span class="btn-spinner hidden" aria-hidden="true"></span>
-            </button>
+      <section class="panel analyze-panel" id="analyze-section">
+        <h2>Run diagnostics</h2>
+        <p class="lead">Enter a hostname or IP address to analyze DNS, routing, connectivity, and web services.</p>
+        <form id="analyze-form" autocomplete="off">
+          <div class="input-group">
+            <input id="target-input" type="text" placeholder="example.com" required aria-label="Target" />
+            <button type="submit" id="analyze-btn"><span class="btn-label">Analyze</span><span class="btn-spinner hidden"></span></button>
           </div>
-          <label class="checkbox-row">
-            <input type="checkbox" id="include-transport" />
-            Include optional DNS UDP/TCP experiment (educational)
-          </label>
+          <div class="option-row">
+            <label><input type="checkbox" id="include-transport" checked /> DNS UDP/TCP comparison</label>
+            <label><input type="checkbox" id="include-traceroute" /> Traceroute (may take ~30s)</label>
+          </div>
           <p id="form-error" class="form-error hidden" role="alert"></p>
         </form>
       </section>
 
       <section id="results-root" class="hidden">
-        <div class="summary-grid" id="summary-grid"></div>
-
-        <section id="dns-section" class="card card-interactive">
-          <div class="card-head">
-            <h2>DNS records</h2>
-            <span id="dns-rcode-badge" class="badge badge-pending">—</span>
+        <section class="health-banner" id="health-banner">
+          <div class="health-score-ring" id="health-score">—</div>
+          <div>
+            <p class="health-label">Network health score</p>
+            <p class="health-status" id="health-status">—</p>
+            <p class="health-meta" id="health-meta"></p>
+            <a id="pdf-link" class="btn-secondary hidden" href="#">Download PDF report</a>
           </div>
-          <p id="dns-meta" class="muted dns-meta"></p>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Check summary</h2></div>
           <div class="table-wrap">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Type</th>
-                  <th>Value</th>
-                  <th>TTL (s)</th>
-                  <th>Query note</th>
-                </tr>
-              </thead>
+            <table class="results-table" id="checks-table">
+              <thead><tr><th>Status</th><th>Check</th><th>Result</th></tr></thead>
+              <tbody id="checks-table-body"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel" id="dns-section">
+          <div class="panel-head"><h2>DNS records</h2><span id="dns-rcode-badge" class="chip">—</span></div>
+          <p id="dns-meta" class="subtle"></p>
+          <div class="table-wrap">
+            <table class="results-table">
+              <thead><tr><th>Type</th><th>Value</th><th>TTL</th><th>Note</th></tr></thead>
               <tbody id="dns-table-body"></tbody>
             </table>
           </div>
-          <p id="dns-empty" class="empty-inline hidden">No resource records to display.</p>
         </section>
 
-        <section id="ip-section" class="card card-interactive">
+        <section class="panel" id="ip-section">
           <h2>IP addressing</h2>
-          <div id="ip-grid" class="ip-grid"></div>
+          <div id="ip-grid" class="metric-grid"></div>
         </section>
 
-        <section id="network-section" class="card card-interactive">
-          <h2>Network diagnostics</h2>
-          <div id="network-grid" class="network-grid"></div>
+        <section class="panel hidden" id="dns-transport-section">
+          <h2>DNS transport comparison</h2>
+          <p class="subtle">Same query over UDP and TCP — educational comparison of DNS transports.</p>
+          <div id="transport-grid" class="metric-grid"></div>
         </section>
 
-        <section id="charts-section" class="card card-interactive">
-          <h2>Response times</h2>
-          <p class="muted section-lead">Single-run comparison from the latest analysis (not historical trends).</p>
-          <div class="chart-row">
-            <canvas id="timing-chart" height="120" aria-label="Response time comparison chart"></canvas>
+        <section class="panel" id="network-section">
+          <h2>Connectivity &amp; services</h2>
+          <div id="network-grid" class="metric-grid"></div>
+        </section>
+
+        <section class="panel hidden" id="traceroute-section">
+          <h2>Traceroute path</h2>
+          <p class="subtle">Hop-by-hop forwarding and RTT (TTL decreases at each router).</p>
+          <div class="table-wrap">
+            <table class="results-table">
+              <thead><tr><th>Hop</th><th>Address</th><th>RTT (ms)</th></tr></thead>
+              <tbody id="traceroute-body"></tbody>
+            </table>
           </div>
-          <canvas id="rtt-chart" class="hidden" height="100" aria-label="Ping RTT samples chart"></canvas>
         </section>
 
-        <section id="summary-section" class="card card-interactive">
-          <h2>Diagnostic summary</h2>
-          <div id="diagnosis-panel" class="diagnosis-panel"></div>
-          <ul id="suggestions-list" class="suggestions-list"></ul>
+        <section class="panel" id="charts-section">
+          <h2>Response times (this run)</h2>
+          <div class="chart-wrap"><canvas id="timing-chart" height="140"></canvas></div>
+          <canvas id="rtt-chart" class="hidden" height="120"></canvas>
         </section>
 
-        <section id="dns-transport-section" class="card card-interactive hidden">
-          <h2>DNS transport experiment</h2>
-          <p id="dns-transport-body" class="muted"></p>
+        <section class="panel" id="summary-section">
+          <h2>Explainable diagnosis</h2>
+          <div id="insights-accordion" class="accordion"></div>
         </section>
 
-        <section id="history-section" class="card card-interactive">
-          <h2>History &amp; reports</h2>
-          <p id="history-placeholder" class="muted">
-            History list and PDF download appear when Member 2 enables
-            <code>GET /api/history</code> and <code>GET /api/report/&lt;id&gt;</code>.
-          </p>
-          <ul id="history-list" class="history-list hidden"></ul>
+        <section class="panel" id="history-section">
+          <h2>History &amp; comparison</h2>
+          <p class="subtle">Compare two saved runs to spot DNS, loss, or HTTPS timing changes.</p>
+          <div class="compare-row">
+            <select id="compare-baseline" aria-label="Baseline analysis"><option value="">Baseline run</option></select>
+            <select id="compare-current" aria-label="Current analysis"><option value="">Current run</option></select>
+            <button type="button" id="compare-btn" class="btn-secondary">Compare</button>
+          </div>
+          <div id="compare-results" class="compare-results hidden"></div>
+          <ul id="history-list" class="history-list"></ul>
         </section>
       </section>
     </main>
 
-    <footer class="site-footer">
-      <div class="container"><p>NetScope · Computer Networks academic project</p></div>
-    </footer>
-
+    <footer class="site-footer"><div class="container">NetScope · Computer Networks academic project</div></footer>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <script src="{{ url_for('static', filename='js/app.js') }}" defer></script>
   </body>
