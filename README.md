@@ -77,8 +77,8 @@ NetScope/
 |--------|------|---------|
 | `GET` | `/` | Dashboard |
 | `GET` | `/api/health` | Health check (implemented) |
-| `POST` | `/api/analyze` | Run full diagnostics |
-| `GET` | `/api/history` | List past analyses |
+| `POST` | `/api/analyze` | Run full diagnostics (returns `id` when saved) |
+| `GET` | `/api/history` | List past analyses (`?limit=20`) |
 | `GET` | `/api/report/<id>` | Download PDF for analysis `id` |
 
 ### Request (analyze)
@@ -141,7 +141,7 @@ Example **shape** (values are illustrative, not fabricated measurements):
 }
 ```
 
-Units: milliseconds for times, percent for packet loss. **`health_score`** is 0–100, documented as an educational heuristic in `diagnosis.py`.
+Units: milliseconds for times, percent for packet loss. **`health_score`** is 0–100, documented as an educational heuristic in `diagnostics/diagnosis.py` (base 50, DNS ±35/±20, ping ±10, TCP 443 ±15, HTTPS ±20, thresholds 75/45 for Healthy/Degraded/Unavailable).
 
 ## Security and engineering rules
 
