@@ -124,7 +124,7 @@
 
           <div class="hero-analyze-wrap">
 
-            <div class="panel hero-analyze">
+            <div class="panel hero-analyze" data-analyze-panel>
 
               <div class="hero-analyze-inner">
 
@@ -140,13 +140,25 @@
 
                     <input id="dashboard-target-input" type="text" placeholder="Enter domain or IP — e.g. google.com" required />
 
-                    <button type="submit" class="btn-primary">Analyze</button>
+                    <button type="submit" class="btn-primary"><span class="btn-label">Analyze</span><span class="btn-spinner hidden" aria-hidden="true"></span></button>
 
                   </form>
 
                 </div>
 
-                <div class="hero-orbit-mini" aria-hidden="true"><span></span><span></span><span></span></div>
+                <div class="hero-orbit-mini analyze-loader-orbit" aria-hidden="true">
+
+                  <div class="orbit-idle"><span></span><span></span><span></span></div>
+
+                  <div class="orbit-loading hidden">
+
+                    <div class="orbit-spinner" role="status" aria-label="Analysis in progress"></div>
+
+                    <p class="orbit-loading-text">Running checks…</p>
+
+                  </div>
+
+                </div>
 
               </div>
 
@@ -196,47 +208,69 @@
 
         <section id="view-analyze" class="app-view hidden">
 
-          <div class="panel glow analyze-panel hero-analyze" id="analyze-section">
+          <div class="panel glow analyze-panel hero-analyze" id="analyze-section" data-analyze-panel>
 
-            <span class="panel-tag">Advanced</span>
+            <div class="hero-analyze-inner analyze-panel-inner">
 
-            <h2>New Analysis</h2>
+              <div>
 
-            <p class="subtle">Full diagnostic run with optional DNS transport and traceroute.</p>
+                <span class="panel-tag">Advanced</span>
 
-            <form id="analyze-form" autocomplete="off">
+                <h2>New Analysis</h2>
 
-              <div class="input-group">
+                <p class="subtle">Full diagnostic run with optional DNS transport and traceroute.</p>
 
-                <input id="target-input" type="text" placeholder="Enter domain or IP — e.g. google.com" required />
+                <form id="analyze-form" autocomplete="off">
 
-                <button type="submit" id="analyze-btn" class="btn-primary"><span class="btn-label">Analyze</span><span class="btn-spinner hidden"></span></button>
+                  <div class="input-group">
+
+                    <input id="target-input" type="text" placeholder="Enter domain or IP — e.g. google.com" required />
+
+                    <button type="submit" id="analyze-btn" class="btn-primary"><span class="btn-label">Analyze</span><span class="btn-spinner hidden" aria-hidden="true"></span></button>
+
+                  </div>
+
+                  <div class="option-row">
+
+                    <div class="option-group">
+
+                      <label><input type="checkbox" id="include-transport" checked /> <span>DNS UDP/TCP comparison</span> <span class="tag-default">Optional · Default On</span></label>
+
+                      <p class="option-desc">Compares DNS query behavior over UDP and TCP port 53 using the configured DNS server. Useful for learning the difference between DNS transport methods and comparing response time. Results depend on network and firewall restrictions. This is an optional experiment, not a general internet-speed test.</p>
+
+                    </div>
+
+                    <div class="option-group">
+
+                      <label><input type="checkbox" id="include-traceroute" /> <span>Traceroute path</span> <span class="tag-optional">Optional · Off by default</span></label>
+
+                      <p class="option-desc">Shows the network hops between your machine and the target, where intermediate routers respond. Useful for investigating routing paths and possible points of delay. Some routers do not respond to traceroute, so missing hops do not necessarily mean the destination is down. This option may take longer.</p>
+
+                    </div>
+
+                  </div>
+
+                  <p id="form-error" class="form-error hidden"></p>
+
+                </form>
 
               </div>
 
-              <div class="option-row">
+              <div class="hero-orbit-mini analyze-loader-orbit" aria-hidden="true">
 
-                <div class="option-group">
+                <div class="orbit-idle"><span></span><span></span><span></span></div>
 
-                  <label><input type="checkbox" id="include-transport" checked /> <span>DNS UDP/TCP comparison</span> <span class="tag-default">Optional · Default On</span></label>
+                <div class="orbit-loading hidden">
 
-                  <p class="option-desc">Compares DNS query behavior over UDP and TCP port 53 using the configured DNS server. Useful for learning the difference between DNS transport methods and comparing response time. Results depend on network and firewall restrictions. This is an optional experiment, not a general internet-speed test.</p>
+                  <div class="orbit-spinner" role="status" aria-label="Analysis in progress"></div>
 
-                </div>
-
-                <div class="option-group">
-
-                  <label><input type="checkbox" id="include-traceroute" /> <span>Traceroute path</span> <span class="tag-optional">Optional · Off by default</span></label>
-
-                  <p class="option-desc">Shows the network hops between your machine and the target, where intermediate routers respond. Useful for investigating routing paths and possible points of delay. Some routers do not respond to traceroute, so missing hops do not necessarily mean the destination is down. This option may take longer.</p>
+                  <p class="orbit-loading-text">Running checks…</p>
 
                 </div>
 
               </div>
 
-              <p id="form-error" class="form-error hidden"></p>
-
-            </form>
+            </div>
 
           </div>
 

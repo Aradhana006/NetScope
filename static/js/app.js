@@ -750,16 +750,58 @@
   }
 
   var isAnalyzing = false;
+  var analyzeStepTimer = null;
+  var analyzeLoadSteps = ["DNS lookup…", "Ping & TCP…", "HTTP/HTTPS…", "Building findings…"];
+
+  function setSubmitButtonLoading(btn, busy) {
+    if (!btn) return;
+    btn.disabled = busy;
+    btn.classList.toggle("loading", busy);
+    var sp = btn.querySelector(".btn-spinner");
+    if (sp) sp.classList.toggle("hidden", !busy);
+  }
+
   function setAnalyzeState(busy) {
-    var btn = $("analyze-btn");
-    if (btn) {
-      btn.disabled = busy;
-      btn.classList.toggle("loading", busy);
-    }
+    setSubmitButtonLoading($("analyze-btn"), busy);
     var qForm = $("dashboard-quick-form");
-    if (qForm) {
-      var qBtn = qForm.querySelector("button[type=\"submit\"]");
-      if (qBtn) qBtn.disabled = busy;
+    if (qForm) setSubmitButtonLoading(qForm.querySelector("button[type=\"submit\"]"), busy);
+
+    document.querySelectorAll("[data-analyze-panel]").forEach(function (panel) {
+      panel.classList.toggle("is-analyzing-panel", busy);
+    });
+    document.querySelectorAll(".analyze-loader-orbit").forEach(function (orbit) {
+      orbit.classList.toggle("is-analyzing", busy);
+      orbit.setAttribute("aria-hidden", busy ? "false" : "true");
+    });
+
+    var inputs = ["target-input", "dashboard-target-input"];
+    inputs.forEach(function (id) {
+      var el = $(id);
+      if (el) el.disabled = busy;
+    });
+    ["include-transport", "include-traceroute"].forEach(function (id) {
+      var el = $(id);
+      if (el) el.disabled = busy;
+    });
+
+    if (busy) {
+      var stepIdx = 0;
+      document.querySelectorAll(".orbit-loading-text").forEach(function (el) {
+        el.textContent = analyzeLoadSteps[0];
+      });
+      if (analyzeStepTimer) clearInterval(analyzeStepTimer);
+      analyzeStepTimer = setInterval(function () {
+        stepIdx = (stepIdx + 1) % analyzeLoadSteps.length;
+        document.querySelectorAll(".orbit-loading-text").forEach(function (el) {
+          el.textContent = analyzeLoadSteps[stepIdx];
+        });
+      }, 850);
+    } else if (analyzeStepTimer) {
+      clearInterval(analyzeStepTimer);
+      analyzeStepTimer = null;
+      document.querySelectorAll(".orbit-loading-text").forEach(function (el) {
+        el.textContent = "Running checks…";
+      });
     }
   }
 
