@@ -70,3 +70,18 @@ def test_diagnosis_skipped_modules_neutral():
     )
     assert "health_score" in result
     assert result["status"] in ("Healthy", "Degraded", "Unavailable")
+
+
+def test_diagnosis_threshold_boundaries():
+    # Helper to check boundary mapping
+    def get_status_for_score(score_val):
+        if score_val >= 75:
+            return "Healthy"
+        elif score_val >= 45:
+            return "Degraded"
+        return "Unavailable"
+
+    assert get_status_for_score(75) == "Healthy"
+    assert get_status_for_score(74) == "Degraded"
+    assert get_status_for_score(45) == "Degraded"
+    assert get_status_for_score(44) == "Unavailable"

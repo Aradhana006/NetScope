@@ -84,13 +84,21 @@ def generate_pdf_report(analysis: dict, output_path: str | None = None) -> bytes
     story = []
 
     target = analysis.get("target", "—")
-    ts = analysis.get("timestamp", "—")
+    raw_ts = analysis.get("timestamp") or analysis.get("created_at") or "—"
+    try:
+        from database.history import format_timestamp_ist
+        ist_ts = format_timestamp_ist(raw_ts) if raw_ts and raw_ts != "—" else "—"
+    except Exception:
+        ist_ts = "—"
     diagnosis = analysis.get("diagnosis") or {}
 
     story.append(Paragraph("<b>NetScope Network Diagnostic Report</b>", styles["Title"]))
     story.append(Spacer(1, 0.15 * inch))
     story.append(Paragraph(f"<b>Target:</b> {target}", styles["Normal"]))
-    story.append(Paragraph(f"<b>Timestamp (UTC):</b> {ts}", styles["Normal"]))
+    if ist_ts != "—" and ist_ts != raw_ts:
+        story.append(Paragraph(f"<b>Timestamp:</b> {ist_ts} <font size=9 color='#64748b'>(UTC: {raw_ts})</font>", styles["Normal"]))
+    else:
+        story.append(Paragraph(f"<b>Timestamp:</b> {raw_ts}", styles["Normal"]))
     story.append(
         Paragraph(
             f"<b>Health score:</b> {diagnosis.get('health_score', '—')} "
@@ -99,6 +107,24 @@ def generate_pdf_report(analysis: dict, output_path: str | None = None) -> bytes
         )
     )
     story.append(Spacer(1, 0.2 * inch))
+
+    checks = _build_check_rows(analysis)
+    if checks:
+        table = Table([["Status", "Check", "Result"]] + checks, colWidths=[1.1 * inch, 2.2 * inch, 3.2 * inch])
+        table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#E8F0FE")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#1E3A8A")),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ]
+            )
+        )
+        story.append(Paragraph("<b>Summary of checks</b>", styles["Heading2"]))
+        story.append(table)
+        story.append(Spacer(1, 0.25 * inch))
 
     findings = diagnosis.get("findings") or []
     if findings:
@@ -115,23 +141,6 @@ def generate_pdf_report(analysis: dict, output_path: str | None = None) -> bytes
             )
         story.append(Paragraph("<b>Unified findings</b>", styles["Heading2"]))
         story.append(_grid_table(finding_rows, [0.95 * inch, 0.85 * inch, 1.55 * inch, 1.55 * inch, 1.55 * inch]))
-        story.append(Spacer(1, 0.25 * inch))
-    else:
-        checks = _build_check_rows(analysis)
-        table = Table([["Status", "Check", "Result"]] + checks, colWidths=[1.1 * inch, 2.2 * inch, 3.2 * inch])
-        table.setStyle(
-            TableStyle(
-                [
-                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#E8F0FE")),
-                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#1E3A8A")),
-                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                    ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
-                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ]
-            )
-        )
-        story.append(Paragraph("<b>Summary of checks</b>", styles["Heading2"]))
-        story.append(table)
         story.append(Spacer(1, 0.25 * inch))
 
     dns = analysis.get("dns") or {}
@@ -196,22 +205,45 @@ def _build_check_rows(analysis: dict) -> list[list[str]]:
     tcp = analysis.get("tcp") or {}
     http = analysis.get("http") or {}
 
-    rows.append(["Passed" if dns.get("status") == "success" else "Warn", "DNS lookup", dns.get("response_code", "—")])
-    rows.append(
-        [
-            "Passed" if conn.get("reachable") else "Warn",
-            "ICMP / Ping",
-            f"RTT {conn.get('average_rtt_ms')} ms, loss {conn.get('packet_loss_percent')}%",
-        ]
-    )
-    p443 = (tcp.get("ports") or {}).get("443") or {}
-    rows.append(["Passed" if p443.get("state") == "open" else "Warn", "TCP 443", p443.get("state", "—")])
-    https = http.get("https") or {}
-    rows.append(
-        [
-            "Passed" if https.get("available") else "Warn",
-            "HTTPS",
-            str(https.get("status_code", "—")),
-        ]
-    )
+    dns_status = dns.get("status")
+    if dns_status == "skipped":
+        rows.append(["Info", "DNS lookup", "Skipped (IP address target)"])
+    else:
+        dns_ok = dns_status == "success"
+        rcode = dns.get("response_code") or dns_status or "—"
+        rtime = f" ({dns.get('response_time_ms')} ms)" if dns.get("response_time_ms") is not None else ""
+        rows.append(["Passed" if dns_ok else "Warn", "DNS lookup", f"{rcode}{rtime}"])
+
+    if conn.get("reachable"):
+        rtt = conn.get("average_rtt_ms")
+        loss = conn.get("packet_loss_percent", 0)
+        rtt_str = f"RTT {rtt} ms" if rtt is not None else "Reachable"
+        rows.append(["Passed", "ICMP / Ping", f"{rtt_str}, loss {loss}%"])
+    elif conn.get("status") == "skipped":
+        rows.append(["Info", "ICMP / Ping", "Skipped"])
+    else:
+        loss = conn.get("packet_loss_percent")
+        loss_str = f"loss {loss}%" if loss is not None else "No echo reply"
+        rows.append(["Warn", "ICMP / Ping", f"Unreachable ({loss_str})"])
+
+    ports = tcp.get("ports") or {}
+    p80 = ports.get("80")
+    if p80:
+        rows.append(["Passed" if p80.get("state") == "open" else "Warn", "TCP Port 80 (HTTP)", p80.get("state", "—")])
+    p443 = ports.get("443")
+    if p443:
+        rows.append(["Passed" if p443.get("state") == "open" else "Warn", "TCP Port 443 (HTTPS)", p443.get("state", "—")])
+
+    h_http = http.get("http")
+    if h_http:
+        h_ok = h_http.get("available")
+        code = h_http.get("status_code", "—")
+        rtime = f" ({h_http.get('response_time_ms')} ms)" if h_http.get("response_time_ms") is not None else ""
+        rows.append(["Passed" if h_ok else "Warn", "HTTP Service", f"Status {code}{rtime}"])
+    https = http.get("https")
+    if https:
+        h_ok = https.get("available")
+        code = https.get("status_code", "—")
+        rtime = f" ({https.get('response_time_ms')} ms)" if https.get("response_time_ms") is not None else ""
+        rows.append(["Passed" if h_ok else "Warn", "HTTPS Service", f"Status {code}{rtime}"])
     return rows

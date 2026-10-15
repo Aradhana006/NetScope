@@ -66,7 +66,18 @@ def build_findings(
 
     dns_status = _module_status(dns)
     dns_code = (dns.get("response_code") or "").upper()
-    if dns_status == "skipped":
+    if dns_code == "N/A":
+        findings.append(
+            _finding(
+                "DNS",
+                "skipped",
+                "DNS not applicable",
+                "Target is an IP address; hostname DNS record lookups were skipped.",
+                "—",
+                "Refer to IP Analysis and Connectivity checks.",
+            )
+        )
+    elif dns_status == "skipped":
         findings.append(
             _finding(
                 "DNS",
@@ -290,7 +301,10 @@ def build_diagnosis(
     dns_status = _module_status(dns)
     dns_code = (dns.get("response_code") or "").upper()
 
-    if dns_status == "error" or dns_code == "NXDOMAIN":
+    if dns_code == "N/A":
+        # Neutral: IP literals do not use hostname DNS record resolution
+        pass
+    elif dns_status == "error" or dns_code == "NXDOMAIN":
         score -= 35
         msg = "DNS resolution failed — verify the hostname or DNS configuration."
         suggestions.append(msg)

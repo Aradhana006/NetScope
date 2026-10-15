@@ -31,9 +31,13 @@ def is_ip_address(value: str) -> bool:
         return False
 
 
+from urllib.parse import urlsplit
+
+
 def validate_target(raw: str) -> tuple[bool, str | None, str | None]:
     """
     Validate a domain name or IP address.
+    Also safely extracts hostnames from URL inputs (e.g. https://example.com/path).
 
     Returns:
         (True, normalized_target, None) on success.
@@ -46,6 +50,26 @@ def validate_target(raw: str) -> tuple[bool, str | None, str | None]:
 
     if len(target) > MAX_TARGET_LENGTH:
         return False, None, f"Target must be at most {MAX_TARGET_LENGTH} characters."
+
+    # If user provided a URL scheme or path, safely extract the hostname
+    if "://" in target or target.startswith("//"):
+        try:
+            parsed = urlsplit(target)
+            if parsed.hostname:
+                target = parsed.hostname
+            else:
+                return False, None, "Enter a valid domain name (e.g. example.com) or IP address."
+        except Exception:
+            return False, None, "Enter a valid domain name (e.g. example.com) or IP address."
+
+    # If target has trailing slash or path (e.g. example.com/), strip trailing slashes
+    if "/" in target:
+        parts = target.split("/", 1)
+        target = parts[0]
+
+    # Bracketed IPv6 (e.g. [2001:db8::1])
+    if target.startswith("[") and target.endswith("]"):
+        target = target[1:-1]
 
     if is_ip_address(target):
         return True, target, None

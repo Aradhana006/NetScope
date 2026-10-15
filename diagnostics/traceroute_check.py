@@ -32,8 +32,9 @@ def _traceroute_result(
 def build_traceroute_command(target: str, max_hops: int) -> list[str]:
     hops = max(1, min(int(max_hops), MAX_HOPS))
     if platform.system().lower() == "windows":
-        return ["tracert", "-h", str(hops), "-w", "2000", target]
-    return ["traceroute", "-m", str(hops), "-q", "1", "-w", "2", target]
+        # -d avoids slow reverse DNS lookups on intermediate router hops; -w 1000 bounds probe timeout
+        return ["tracert", "-d", "-h", str(hops), "-w", "1000", target]
+    return ["traceroute", "-n", "-m", str(hops), "-q", "1", "-w", "2", target]
 
 
 def parse_windows_tracert(output: str) -> list[dict]:
@@ -99,8 +100,23 @@ def analyze_traceroute(
             timeout=timeout,
             check=False,
         )
-    except subprocess.TimeoutExpired:
-        return _traceroute_result("error", [], "Traceroute timed out.")
+    except subprocess.TimeoutExpired as exc:
+        elapsed = (time.perf_counter() - start) * 1000
+        raw = exc.stdout or ""
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8", errors="replace")
+        if platform.system().lower() == "windows":
+            hops = parse_windows_tracert(raw)
+        else:
+            hops = parse_unix_traceroute(raw)
+        if hops:
+            return _traceroute_result(
+                "partial",
+                hops,
+                "Traceroute reached execution timeout; partial hops shown.",
+                elapsed,
+            )
+        return _traceroute_result("error", [], "Traceroute timed out.", elapsed)
     except FileNotFoundError:
         return _traceroute_result(
             "error",

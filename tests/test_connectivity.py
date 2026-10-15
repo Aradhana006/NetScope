@@ -65,3 +65,21 @@ def test_analyze_connectivity_timeout(mock_run):
     result = analyze_connectivity("1.1.1.1")
     assert result["status"] == "error"
     assert "timed out" in (result["error"] or "").lower()
+
+
+@patch("diagnostics.connectivity.subprocess.run")
+def test_analyze_connectivity_timeout_partial_output(mock_run):
+    import subprocess
+
+    exc = subprocess.TimeoutExpired(
+        cmd=["ping"],
+        timeout=5,
+        output="Reply from 1.1.1.1: bytes=32 time=8ms TTL=55\nReply from 1.1.1.1: bytes=32 time=10ms TTL=55\n",
+    )
+    mock_run.side_effect = exc
+    result = analyze_connectivity("1.1.1.1")
+    assert result["status"] == "partial"
+    assert result["reachable"] is True
+    assert result["rtt_samples_ms"] == [8.0, 10.0]
+    assert result["average_rtt_ms"] == 9.0
+    assert "partial replies" in (result["error"] or "").lower()

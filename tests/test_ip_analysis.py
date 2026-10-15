@@ -60,3 +60,33 @@ def test_invalid_target():
     result = analyze_ip("bad name!!", {})
     assert result["status"] == "error"
     assert result["input_type"] == "invalid"
+
+
+def test_validate_target_urls_and_inputs():
+    from validators import validate_target
+
+    # Standard hostnames
+    ok, target, err = validate_target("google.com")
+    assert ok and target == "google.com" and err is None
+
+    # URL with https and trailing slash
+    ok, target, err = validate_target("https://example.com/")
+    assert ok and target == "example.com" and err is None
+
+    # URL with path and query parameters
+    ok, target, err = validate_target("http://sub.domain.co.uk/path?arg=1#hash")
+    assert ok and target == "sub.domain.co.uk" and err is None
+
+    # IPv4 literal with trailing slash
+    ok, target, err = validate_target("192.168.1.1/")
+    assert ok and target == "192.168.1.1" and err is None
+
+    # Bracketed IPv6 literal
+    ok, target, err = validate_target("[2001:db8::1]")
+    assert ok and target == "2001:db8::1" and err is None
+
+    # Malformed / empty targets
+    assert not validate_target("")[0]
+    assert not validate_target("   ")[0]
+    assert not validate_target("https:///")[0]
+    assert not validate_target("-invalid-.com")[0]

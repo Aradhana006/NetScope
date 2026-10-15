@@ -42,9 +42,10 @@ def build_ping_command(target: str, count: int, timeout: float) -> list[str]:
     """Build a safe ping argv list (no shell)."""
     count = max(1, min(int(count), MAX_PROBES))
     if platform.system().lower() == "windows":
-        timeout_ms = max(1000, int(timeout * 1000))
-        return ["ping", "-n", str(count), "-w", str(timeout_ms), target]
-    wait_sec = max(1, int(timeout))
+        # -w on Windows is timeout per echo reply in ms; divide total timeout by count
+        per_probe_ms = max(1000, int((timeout / count) * 1000))
+        return ["ping", "-n", str(count), "-w", str(per_probe_ms), target]
+    wait_sec = max(1, int(timeout / count))
     cmd = ["ping", "-c", str(count), "-W", str(wait_sec), target]
     if sys.platform == "darwin":
         cmd = ["ping", "-c", str(count), target]
@@ -98,7 +99,24 @@ def analyze_connectivity(
             timeout=timeout + 2,
             check=False,
         )
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as exc:
+        raw = exc.stdout or ""
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8", errors="replace")
+        if platform.system().lower() == "windows":
+            samples, average, loss = parse_windows_ping_output(raw)
+        else:
+            samples, average, loss = parse_unix_ping_output(raw)
+        if samples:
+            return _connectivity_result(
+                status="partial",
+                reachable=True,
+                average_rtt_ms=average,
+                packet_loss_percent=loss if loss is not None else round((1.0 - len(samples) / probes) * 100, 2),
+                probes_sent=probes,
+                rtt_samples_ms=samples,
+                error="Ping timed out after partial replies (ICMP may be degraded or firewalled).",
+            )
         return _connectivity_result(
             status="error",
             reachable=False,

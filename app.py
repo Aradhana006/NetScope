@@ -173,11 +173,12 @@ def create_app() -> Flask:
     @app.get("/api/report/<int:analysis_id>")
     def report(analysis_id: int):
         uid = _current_user_id()
+        if not uid:
+            return jsonify({"error": "Login required."}), 401
         stored = get_analysis(analysis_id, app.config["DATABASE_PATH"], user_id=uid)
-        if not stored and uid:
-            stored = get_analysis(analysis_id, app.config["DATABASE_PATH"], user_id=None)
         if not stored:
             return jsonify({"error": "Analysis not found."}), 404
+        stored["id"] = analysis_id
         pdf_bytes = generate_pdf_report(stored)
         return send_file(
             BytesIO(pdf_bytes),
@@ -193,11 +194,12 @@ def create_app() -> Flask:
         if not isinstance(data, dict):
             return jsonify({"error": "Invalid payload."}), 400
         pdf_bytes = generate_pdf_report(data)
+        safe_target = "".join(c for c in str(data.get("target", "netscope")) if c.isalnum() or c in ".-_") or "netscope"
         return send_file(
             BytesIO(pdf_bytes),
             mimetype="application/pdf",
             as_attachment=True,
-            download_name="netscope-report.pdf",
+            download_name=f"netscope-report-{safe_target}.pdf",
         )
 
     @app.post("/api/analyze")

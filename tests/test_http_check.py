@@ -46,3 +46,14 @@ def test_http_timeout(mock_head):
     mock_head.side_effect = requests.exceptions.Timeout()
     result = analyze_http("example.com", timeout=1.0)
     assert result["status"] == "error"
+
+
+@patch("diagnostics.http_check.requests.head")
+def test_http_ipv6_bracketed_url(mock_head):
+    mock_head.return_value = _response(200, "https://[2001:db8::1]/")
+    result = analyze_http("2001:db8::1", timeout=1.0)
+    assert result["status"] in ("success", "partial")
+    # Verify requests.head was called with bracketed IPv6 URL
+    for call_args in mock_head.call_args_list:
+        url = call_args[0][0]
+        assert "[" in url and "]" in url

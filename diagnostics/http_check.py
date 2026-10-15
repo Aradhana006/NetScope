@@ -31,6 +31,12 @@ def _build_url(scheme: str, target: str) -> str:
     host = target.strip()
     if host.startswith("http://") or host.startswith("https://"):
         return host
+    try:
+        addr = ipaddress.ip_address(host)
+        if addr.version == 6:
+            return f"{scheme}://[{host}]"
+    except ValueError:
+        pass
     return f"{scheme}://{host}"
 
 

@@ -36,7 +36,37 @@ def init_db(db_path: str) -> None:
         conn.commit()
 
 
-def save_analysis(result: dict, db_path: str, user_id: int | None = None) -> int:
+IST_OFFSET = timezone(timedelta(hours=5, minutes=30), name="IST")
+
+
+def format_timestamp_ist(iso_str: str | None) -> str:
+    """
+    Format a UTC or offset-aware ISO timestamp into an India Standard Time (IST) display string.
+    Example: '2026-10-14T18:11:19.860540+00:00' -> '14 Oct 2026, 11:41:19 PM IST'
+    """
+    if not iso_str:
+        return "—"
+    try:
+        # Support trailing Z as UTC
+        clean = iso_str.strip()
+        if clean.endswith("Z"):
+            clean = clean[:-1] + "+00:00"
+        dt = datetime.fromisoformat(clean)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        ist_dt = dt.astimezone(IST_OFFSET)
+        # Format: 14 Oct 2026, 11:41:19 PM IST
+        formatted_time = ist_dt.strftime("%d %b %Y, %I:%M:%S %p IST")
+        # Strip leading zero on day if present (e.g. 05 Oct -> 5 Oct or keep 2-digit)
+        return formatted_time
+    except (ValueError, TypeError):
+        return str(iso_str)
+
+
+def save_analysis(result: dict, db_path: str, user_id: int | None = None) -> int | None:
+    if user_id is None:
+        return None
+
     init_db(db_path)
     target = result.get("target", "")
     created_at = result.get("timestamp") or ""
@@ -46,15 +76,30 @@ def save_analysis(result: dict, db_path: str, user_id: int | None = None) -> int
     payload = json.dumps(result)
 
     with sqlite3.connect(db_path) as conn:
+        # Idempotency check: if identical analysis for same user & target & created_at already exists, return it
+        if created_at:
+            cursor = conn.execute(
+                """
+                SELECT id FROM analyses
+                WHERE user_id = ? AND target = ? AND created_at = ?
+                LIMIT 1
+                """,
+                (int(user_id), target, created_at),
+            )
+            existing = cursor.fetchone()
+            if existing:
+                return int(existing[0])
+
         cursor = conn.execute(
             """
             INSERT INTO analyses (user_id, target, created_at, health_score, status, payload)
             VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (user_id, target, created_at, health_score, status, payload),
+            (int(user_id), target, created_at, health_score, status, payload),
         )
         conn.commit()
         return int(cursor.lastrowid)
+
 
 
 def list_analyses(limit: int = 20, db_path: str = "", user_id: int | None = None) -> list[dict]:

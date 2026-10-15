@@ -16,8 +16,29 @@
     analyze: ["New Analysis", "Run diagnostics"],
     results: ["Analysis Results", "Layered network view"],
     history: ["History", "Saved analyses"],
-    reports: ["Reports", "PDF export"],
   };
+
+  function formatTimestampIST(isoStr) {
+    if (!isoStr) return "—";
+    try {
+      var d = new Date(isoStr);
+      if (isNaN(d.getTime())) return String(isoStr);
+      var formatter = new Intl.DateTimeFormat("en-GB", {
+        timeZone: "Asia/Kolkata",
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: true,
+      });
+      var formatted = formatter.format(d);
+      return formatted.replace(/\b(am|pm)\b/i, function (m) { return m.toUpperCase(); }) + " IST";
+    } catch (e) {
+      return String(isoStr);
+    }
+  }
 
   function $(id) { return document.getElementById(id); }
 
@@ -52,7 +73,7 @@
   function rowActions(id) {
     return "<div class=\"row-actions\">" +
       "<button type=\"button\" class=\"icon-btn\" data-action=\"view\" data-id=\"" + id + "\">View</button>" +
-      "<a class=\"icon-btn\" href=\"/api/report/" + id + "\">PDF</a>" +
+      "<button type=\"button\" class=\"icon-btn\" data-action=\"pdf\" data-id=\"" + id + "\" title=\"Export PDF Report\">PDF</button>" +
       "</div>";
   }
 
@@ -62,7 +83,7 @@
       return !filter || (it.target || "").toLowerCase().indexOf(filter) >= 0;
     });
     var html = rows.length ? rows.map(function (it) {
-      return "<tr><td>" + esc(it.target) + "</td><td>" + esc(it.created_at) + "</td><td>" +
+      return "<tr><td>" + esc(it.target) + "</td><td>" + esc(formatTimestampIST(it.created_at)) + "</td><td>" +
         statusBadge(it.status) + "</td><td>" + esc(it.health_score != null ? it.health_score + "%" : "—") +
         "</td><td>" + rowActions(it.id) + "</td></tr>";
     }).join("") : "<tr><td colspan=\"5\" class=\"empty-cell\">No matching runs.</td></tr>";
@@ -70,7 +91,7 @@
     if ($("recent-analyses-body")) {
       var recent = rows.slice(0, 8);
       $("recent-analyses-body").innerHTML = recent.length ? recent.map(function (it) {
-        return "<tr><td>" + esc(it.target) + "</td><td>" + esc(it.created_at) + "</td><td>" +
+        return "<tr><td>" + esc(it.target) + "</td><td>" + esc(formatTimestampIST(it.created_at)) + "</td><td>" +
           statusBadge(it.status) + "</td><td>" + esc(it.health_score != null ? it.health_score + "%" : "—") +
           "</td><td>" + rowActions(it.id) + "</td></tr>";
       }).join("") : "<tr><td colspan=\"5\" class=\"empty-cell\">No analyses yet. Run your first scan above.</td></tr>";
@@ -97,29 +118,20 @@
       chip("HTTP/HTTPS", https.available === true, https.status_code != null ? String(https.status_code) : "—");
   }
 
-  function updateReportPreview(data) {
-    if (!data) return;
-    var diag = data.diagnosis || {};
-    if ($("report-meta")) $("report-meta").textContent = (data.target || "—") + " · " + (data.timestamp || "");
-    if ($("report-score")) $("report-score").textContent = "Health " + (diag.health_score != null ? diag.health_score + "%" : "—");
-    if ($("report-summary")) {
-      $("report-summary").textContent = diag.status
-        ? "Overall status: " + diag.status + ". " + ((diag.suggestions && diag.suggestions[0]) || "See full analysis for details.")
-        : "Diagnostic summary unavailable.";
-    }
-    var dl = $("report-download-link");
-    var ex = $("report-export-btn");
-    if (dl) {
-      if (data.id) { dl.href = "/api/report/" + data.id; dl.classList.remove("hidden"); }
-      else dl.classList.add("hidden");
-    }
-    if (ex) ex.classList.toggle("hidden", !lastAnalysis);
-  }
+
 
   async function loadSavedAnalysis(id) {
     try {
       var r = await fetch("/api/history/" + encodeURIComponent(id));
-      if (!r.ok) return;
+      if (r.status === 401) {
+        alert("Session expired. Please log in to view saved analysis details.");
+        if ($("login-modal")) $("login-modal").classList.remove("hidden");
+        return;
+      }
+      if (!r.ok) {
+        alert("Unable to load saved analysis.");
+        return;
+      }
       var data = await r.json();
       lastAnalysis = data;
       showResults(data);
@@ -131,7 +143,6 @@
     if ($("results-empty")) $("results-empty").classList.add("hidden");
     if ($("results-target-title")) $("results-target-title").textContent = data.target || "—";
     renderAll(data);
-    updateReportPreview(data);
     switchView("results");
     activateResultTab("overview");
   }
@@ -159,17 +170,15 @@
       }
     }
     if (status) status.textContent = diag.status || "Pending";
-    if (meta) meta.textContent = "Target: " + (data.target || "—") + " · " + (data.timestamp || "");
-    var exportBtn = $("pdf-export-btn");
+    if (meta) meta.textContent = "Target: " + (data.target || "—") + " · " + formatTimestampIST(data.timestamp);
     if (pdf) {
-      if (data.id) {
-        pdf.href = "/api/report/" + data.id;
-        pdf.classList.remove("hidden");
+      pdf.classList.remove("hidden");
+      if (data.id != null) {
+        pdf.href = "/api/report/" + encodeURIComponent(data.id);
       } else {
-        pdf.classList.add("hidden");
+        pdf.href = "#";
       }
     }
-    if (exportBtn) exportBtn.classList.toggle("hidden", !lastAnalysis);
   }
 
   async function loadStats() {
@@ -185,22 +194,7 @@
     } catch (e) {}
   }
 
-  async function exportCurrentPdf() {
-    if (!lastAnalysis) return;
-    var r = await fetch("/api/report/export", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/pdf" },
-      body: JSON.stringify(lastAnalysis),
-    });
-    if (!r.ok) return;
-    var blob = await r.blob();
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement("a");
-    a.href = url;
-    a.download = "netscope-report.pdf";
-    a.click();
-    URL.revokeObjectURL(url);
-  }
+
 
   function statusClass(ok, warn) {
     if (ok) return "status-pass";
@@ -409,128 +403,259 @@
     Chart.defaults.font.family = "'Plus Jakarta Sans', system-ui, sans-serif";
     Chart.defaults.font.size = 14;
 
-    var dns = data.dns || {};
-    var dnsTypes = ["A", "AAAA", "MX", "NS", "CNAME"];
+    // --- Chart 1: DNS by record type ---
+    var dns = (data && data.dns) || {};
+    var dnsCanvas = $("dns-chart");
+    var dnsEmpty = $("dns-chart-empty");
+    dnsChart = destroyChart(dnsChart);
+
+    var isIpTarget = (data && data.ip_analysis && data.ip_analysis.input_type !== "hostname") || (dns.response_code === "N/A");
     var dnsLabels = [];
     var dnsValues = [];
-    var baseDns = dns.response_time_ms;
-    dnsTypes.forEach(function (type) {
-      var rec = (dns.records || {})[type] || [];
-      if (rec.length && baseDns != null) {
-        dnsLabels.push(type);
-        dnsValues.push(Number(baseDns));
+
+    if (isIpTarget) {
+      if (dnsCanvas) dnsCanvas.classList.add("hidden");
+      if (dnsEmpty) {
+        dnsEmpty.textContent = "DNS record lookup not applicable for IP addresses.";
+        dnsEmpty.classList.remove("hidden");
       }
-    });
-    var dnsCanvas = $("dns-chart");
-    if (dnsCanvas) {
-      dnsChart = destroyChart(dnsChart);
-      if (dnsLabels.length) {
+    } else if (dns.status === "error" || dns.response_code === "NXDOMAIN" || dns.response_code === "TIMEOUT") {
+      if (dnsCanvas) dnsCanvas.classList.add("hidden");
+      if (dnsEmpty) {
+        dnsEmpty.textContent = dns.response_code === "NXDOMAIN"
+          ? "DNS resolution failed (NXDOMAIN — domain does not exist)."
+          : "DNS resolution failed (" + (dns.response_code || dns.error || "error") + ").";
+        dnsEmpty.classList.remove("hidden");
+      }
+    } else if (dns.query_times_ms) {
+      var dnsTypes = ["A", "AAAA", "MX", "NS", "CNAME"];
+      dnsTypes.forEach(function (type) {
+        var t = dns.query_times_ms[type];
+        if (t != null && !isNaN(t)) {
+          dnsLabels.push(type);
+          dnsValues.push(Number(t));
+        }
+      });
+      if (dnsLabels.length > 0 && dnsCanvas) {
+        if (dnsEmpty) dnsEmpty.classList.add("hidden");
+        dnsCanvas.classList.remove("hidden");
         dnsChart = new Chart(dnsCanvas, {
-          type: "line",
+          type: "bar",
           data: {
             labels: dnsLabels,
             datasets: [{
-              label: "Response time",
+              label: "Query time",
               data: dnsValues,
-              borderColor: "#0d9488",
-              backgroundColor: "rgba(13,148,136,.12)",
-              borderWidth: 3,
-              pointRadius: 5,
-              pointBackgroundColor: "#0f766e",
-              tension: 0.35,
-              fill: true,
+              backgroundColor: "#0d9488",
+              borderRadius: 6,
+              barThickness: 36,
             }],
           },
-          options: Object.assign({}, chartBaseOptions(2), { scales: scaleOptions() }),
-        });
-      }
-    }
-
-    var labels = [], values = [];
-    if (baseDns != null) { labels.push("DNS"); values.push(baseDns); }
-    var p443 = ((data.tcp || {}).ports || {})["443"];
-    if (p443 && p443.latency_ms != null) { labels.push("TCP 443"); values.push(p443.latency_ms); }
-    var https = (data.http || {}).https;
-    if (https && https.response_time_ms != null) { labels.push("HTTPS"); values.push(https.response_time_ms); }
-    var canvas = $("timing-chart");
-    if (canvas) {
-      timingChart = destroyChart(timingChart);
-      if (labels.length) {
-        timingChart = new Chart(canvas, {
-          type: "bar",
-          data: {
-            labels: labels,
-            datasets: [{
-              data: values,
-              backgroundColor: ["#14b8a6", "#0d9488", "#0f766e"],
-              borderRadius: 8,
-              barThickness: 42,
-            }],
-          },
-          options: Object.assign({}, chartBaseOptions(1.75), { scales: scaleOptions() }),
-        });
-      }
-    }
-
-    var samples = (data.connectivity || {}).rtt_samples_ms;
-    var rttCanvas = $("rtt-chart");
-    var rttEmpty = $("rtt-chart-empty");
-    if (rttCanvas) {
-      rttChart = destroyChart(rttChart);
-      if (samples && samples.length) {
-        if (rttEmpty) rttEmpty.classList.add("hidden");
-        rttCanvas.classList.remove("hidden");
-        rttChart = new Chart(rttCanvas, {
-          type: "line",
-          data: {
-            labels: samples.map(function (_, i) { return "Probe " + (i + 1); }),
-            datasets: [{
-              data: samples,
-              borderColor: "#059669",
-              backgroundColor: "rgba(5,150,105,.12)",
-              borderWidth: 2.5,
-              pointRadius: 4,
-              tension: 0.3,
-              fill: true,
-            }],
-          },
-          options: Object.assign({}, chartBaseOptions(2), { scales: scaleOptions() }),
+          options: Object.assign({}, chartBaseOptions(1.85), { scales: scaleOptions() }),
         });
       } else {
-        rttCanvas.classList.add("hidden");
-        if (rttEmpty) rttEmpty.classList.remove("hidden");
+        if (dnsCanvas) dnsCanvas.classList.add("hidden");
+        if (dnsEmpty) {
+          dnsEmpty.textContent = "No DNS query timings returned.";
+          dnsEmpty.classList.remove("hidden");
+        }
       }
-    }
-
-    var httpLabels = [];
-    var httpValues = [];
-    if (baseDns != null) { httpLabels.push("DNS"); httpValues.push(baseDns); }
-    if (p443 && p443.latency_ms != null) { httpLabels.push("Connect"); httpValues.push(p443.latency_ms); }
-    if (https && https.response_time_ms != null) {
-      httpLabels.push("Response");
-      httpValues.push(https.response_time_ms);
-    }
-    var httpCanvas = $("http-chart");
-    if (httpCanvas) {
-      httpChart = destroyChart(httpChart);
-      if (httpLabels.length) {
-        httpChart = new Chart(httpCanvas, {
+    } else if (dns.response_time_ms != null && Number(dns.response_time_ms) > 0) {
+      if (dnsCanvas) {
+        if (dnsEmpty) dnsEmpty.classList.add("hidden");
+        dnsCanvas.classList.remove("hidden");
+        dnsChart = new Chart(dnsCanvas, {
           type: "bar",
           data: {
-            labels: httpLabels,
+            labels: ["Total DNS Lookup"],
             datasets: [{
-              data: httpValues,
-              backgroundColor: ["#0d9488", "#059669", "#0891b2"],
-              borderRadius: 8,
+              label: "Lookup time",
+              data: [Number(dns.response_time_ms)],
+              backgroundColor: "#0d9488",
+              borderRadius: 6,
               barThickness: 48,
             }],
           },
-          options: Object.assign({}, chartBaseOptions(1.75), { scales: scaleOptions() }),
+          options: Object.assign({}, chartBaseOptions(1.85), { scales: scaleOptions() }),
         });
+      }
+    } else {
+      if (dnsCanvas) dnsCanvas.classList.add("hidden");
+      if (dnsEmpty) {
+        dnsEmpty.textContent = "No DNS records resolved.";
+        dnsEmpty.classList.remove("hidden");
       }
     }
 
-    var diag = data.diagnosis || {};
+    // --- Chart 2: Service latency ---
+    var timingCanvas = $("timing-chart");
+    var timingEmpty = $("timing-chart-empty");
+    timingChart = destroyChart(timingChart);
+
+    var serviceLabels = [];
+    var serviceValues = [];
+    var serviceColors = [];
+
+    if (!isIpTarget && dns.response_time_ms != null && Number(dns.response_time_ms) > 0) {
+      serviceLabels.push("DNS");
+      serviceValues.push(Number(dns.response_time_ms));
+      serviceColors.push("#14b8a6");
+    }
+
+    var tcpPorts = (data && data.tcp && data.tcp.ports) || {};
+    var p443 = tcpPorts["443"];
+    var p80 = tcpPorts["80"];
+    if (p443 && p443.state === "open" && p443.latency_ms != null) {
+      serviceLabels.push("TCP 443");
+      serviceValues.push(Number(p443.latency_ms));
+      serviceColors.push("#0d9488");
+    } else if (p80 && p80.state === "open" && p80.latency_ms != null) {
+      serviceLabels.push("TCP 80");
+      serviceValues.push(Number(p80.latency_ms));
+      serviceColors.push("#0d9488");
+    }
+
+    var httpData = (data && data.http) || {};
+    var httpsBlock = httpData.https;
+    var httpBlock = httpData.http;
+    if (httpsBlock && httpsBlock.response_time_ms != null && Number(httpsBlock.response_time_ms) > 0) {
+      var httpsLabel = httpsBlock.status_code ? "HTTPS (" + httpsBlock.status_code + ")" : "HTTPS";
+      serviceLabels.push(httpsLabel);
+      serviceValues.push(Number(httpsBlock.response_time_ms));
+      serviceColors.push("#0f766e");
+    } else if (httpBlock && httpBlock.response_time_ms != null && Number(httpBlock.response_time_ms) > 0) {
+      var httpLabel = httpBlock.status_code ? "HTTP (" + httpBlock.status_code + ")" : "HTTP";
+      serviceLabels.push(httpLabel);
+      serviceValues.push(Number(httpBlock.response_time_ms));
+      serviceColors.push("#0f766e");
+    }
+
+    if (serviceLabels.length > 0 && timingCanvas) {
+      if (timingEmpty) timingEmpty.classList.add("hidden");
+      timingCanvas.classList.remove("hidden");
+      timingChart = new Chart(timingCanvas, {
+        type: "bar",
+        data: {
+          labels: serviceLabels,
+          datasets: [{
+            data: serviceValues,
+            backgroundColor: serviceColors,
+            borderRadius: 8,
+            barThickness: 42,
+          }],
+        },
+        options: Object.assign({}, chartBaseOptions(1.75), { scales: scaleOptions() }),
+      });
+    } else {
+      if (timingCanvas) timingCanvas.classList.add("hidden");
+      if (timingEmpty) {
+        timingEmpty.textContent = "No service latency measurements available (services timed out or unreachable).";
+        timingEmpty.classList.remove("hidden");
+      }
+    }
+
+    // --- Chart 3: Ping RTT samples ---
+    var conn = (data && data.connectivity) || {};
+    var samples = conn.rtt_samples_ms || [];
+    var rttCanvas = $("rtt-chart");
+    var rttEmpty = $("rtt-chart-empty");
+    rttChart = destroyChart(rttChart);
+
+    if (samples && samples.length > 0 && rttCanvas) {
+      if (rttEmpty) rttEmpty.classList.add("hidden");
+      rttCanvas.classList.remove("hidden");
+      rttChart = new Chart(rttCanvas, {
+        type: "line",
+        data: {
+          labels: samples.map(function (_, i) { return "Probe " + (i + 1); }),
+          datasets: [{
+            label: "RTT",
+            data: samples,
+            borderColor: "#059669",
+            backgroundColor: "rgba(5,150,105,.12)",
+            borderWidth: 2.5,
+            pointRadius: 4,
+            tension: 0.3,
+            fill: true,
+          }],
+        },
+        options: Object.assign({}, chartBaseOptions(2), { scales: scaleOptions() }),
+      });
+    } else {
+      if (rttCanvas) rttCanvas.classList.add("hidden");
+      if (rttEmpty) {
+        var loss = conn.packet_loss_percent;
+        var rttMsg = "No ping samples received.";
+        if (loss != null && loss === 100) {
+          rttMsg = "100% packet loss — ICMP echo requests timed out or were blocked.";
+        } else if (conn.error) {
+          rttMsg = conn.error;
+        }
+        rttEmpty.textContent = rttMsg;
+        rttEmpty.classList.remove("hidden");
+      }
+    }
+
+    // --- Chart 4: HTTP stack timing ---
+    var httpCanvas = $("http-chart");
+    var httpEmpty = $("http-chart-empty");
+    httpChart = destroyChart(httpChart);
+
+    var httpStackLabels = [];
+    var httpStackValues = [];
+    var httpStackColors = [];
+
+    if (p443 && p443.state === "open" && p443.latency_ms != null) {
+      httpStackLabels.push("TCP 443 Connect");
+      httpStackValues.push(Number(p443.latency_ms));
+      httpStackColors.push("#0d9488");
+    } else if (p80 && p80.state === "open" && p80.latency_ms != null) {
+      httpStackLabels.push("TCP 80 Connect");
+      httpStackValues.push(Number(p80.latency_ms));
+      httpStackColors.push("#0d9488");
+    }
+
+    if (httpBlock && httpBlock.response_time_ms != null && Number(httpBlock.response_time_ms) > 0) {
+      var hCode = httpBlock.status_code ? "HTTP (" + httpBlock.status_code + ")" : "HTTP Response";
+      httpStackLabels.push(hCode);
+      httpStackValues.push(Number(httpBlock.response_time_ms));
+      httpStackColors.push("#059669");
+    }
+
+    if (httpsBlock && httpsBlock.response_time_ms != null && Number(httpsBlock.response_time_ms) > 0) {
+      var hsCode = httpsBlock.status_code ? "HTTPS (" + httpsBlock.status_code + ")" : "HTTPS Response";
+      httpStackLabels.push(hsCode);
+      httpStackValues.push(Number(httpsBlock.response_time_ms));
+      httpStackColors.push("#0891b2");
+    }
+
+    if (httpStackLabels.length > 0 && httpCanvas) {
+      if (httpEmpty) httpEmpty.classList.add("hidden");
+      httpCanvas.classList.remove("hidden");
+      httpChart = new Chart(httpCanvas, {
+        type: "bar",
+        data: {
+          labels: httpStackLabels,
+          datasets: [{
+            data: httpStackValues,
+            backgroundColor: httpStackColors,
+            borderRadius: 8,
+            barThickness: 44,
+          }],
+        },
+        options: Object.assign({}, chartBaseOptions(1.75), { scales: scaleOptions() }),
+      });
+    } else {
+      if (httpCanvas) httpCanvas.classList.add("hidden");
+      if (httpEmpty) {
+        var hErr = (httpsBlock && httpsBlock.error) || (httpBlock && httpBlock.error) || (httpData && httpData.error) || "HTTP/HTTPS service unavailable.";
+        httpEmpty.textContent = "No HTTP timing measurements (" + hErr + ").";
+        httpEmpty.classList.remove("hidden");
+      }
+    }
+
+    // --- Doughnut Gauge: Health Score ---
+    var diag = (data && data.diagnosis) || {};
     var healthCanvas = $("health-chart");
     if (healthCanvas && diag.health_score != null) {
       healthChart = destroyChart(healthChart);
@@ -572,7 +697,7 @@
       var list = $("history-list");
       if (!base || !cur) return;
       var opts = "<option value=\"\">Select run</option>" + items.map(function (it) {
-        return "<option value=\"" + it.id + "\">#" + it.id + " · " + esc(it.target) + " · " + esc(it.created_at) + "</option>";
+        return "<option value=\"" + it.id + "\">#" + it.id + " · " + esc(it.target) + " · " + esc(formatTimestampIST(it.created_at)) + "</option>";
       }).join("");
       base.innerHTML = opts;
       cur.innerHTML = opts;
@@ -624,10 +749,25 @@
     loadHistorySelects();
   }
 
+  var isAnalyzing = false;
+  function setAnalyzeState(busy) {
+    var btn = $("analyze-btn");
+    if (btn) {
+      btn.disabled = busy;
+      btn.classList.toggle("loading", busy);
+    }
+    var qForm = $("dashboard-quick-form");
+    if (qForm) {
+      var qBtn = qForm.querySelector("button[type=\"submit\"]");
+      if (qBtn) qBtn.disabled = busy;
+    }
+  }
+
   async function analyze(target) {
-    $("form-error").classList.add("hidden");
-    $("analyze-btn").disabled = true;
-    $("analyze-btn").classList.add("loading");
+    if (isAnalyzing) return;
+    isAnalyzing = true;
+    if ($("form-error")) $("form-error").classList.add("hidden");
+    setAnalyzeState(true);
     var body = {
       target: target,
       include_dns_transport: $("include-transport") && $("include-transport").checked,
@@ -652,8 +792,8 @@
       $("form-error").textContent = "Server unreachable";
       $("form-error").classList.remove("hidden");
     } finally {
-      $("analyze-btn").disabled = false;
-      $("analyze-btn").classList.remove("loading");
+      isAnalyzing = false;
+      setAnalyzeState(false);
     }
   }
 
@@ -685,6 +825,81 @@
     } catch (e) {}
   }
 
+  async function downloadPdfById(id) {
+    if (!id) return;
+    try {
+      var resp = await fetch("/api/report/" + encodeURIComponent(id));
+      if (resp.status === 401) {
+        alert("Login required to download saved reports. Please log in.");
+        if ($("login-modal")) $("login-modal").classList.remove("hidden");
+        return;
+      }
+      if (!resp.ok) {
+        var errData = await resp.json().catch(function () { return {}; });
+        alert(errData.error || "Report not found or access denied.");
+        return;
+      }
+      var blob = await resp.blob();
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      a.href = url;
+      a.download = "netscope-report-" + id + ".pdf";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+    } catch (e) {
+      alert("Error downloading report.");
+    }
+  }
+
+  async function exportCurrentPdf(e) {
+    if (e && e.preventDefault) e.preventDefault();
+    if (!lastAnalysis) {
+      alert("No active analysis to export. Please run or select an analysis first.");
+      return;
+    }
+    var btn = $("report-export-btn") || $("pdf-export-btn");
+    var origHtml = btn ? btn.innerHTML : "";
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = "<span class=\"btn-spinner\"></span> Generating PDF…";
+    }
+
+    try {
+      if (lastAnalysis.id != null) {
+        await downloadPdfById(lastAnalysis.id);
+        return;
+      }
+      var resp = await fetch("/api/report/export", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(lastAnalysis),
+      });
+      if (!resp.ok) {
+        var err = await resp.json().catch(function () { return {}; });
+        alert(err.error || "Unable to generate PDF report.");
+        return;
+      }
+      var blob = await resp.blob();
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      a.href = url;
+      a.download = (lastAnalysis.target || "netscope") + "-report.pdf";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+    } catch (err) {
+      alert("Network error while generating PDF report.");
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = origHtml;
+      }
+    }
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
     checkHealth();
     loadHistorySelects();
@@ -711,8 +926,16 @@
       });
     });
     document.body.addEventListener("click", function (e) {
-      var btn = e.target.closest("[data-action=\"view\"]");
-      if (btn) loadSavedAnalysis(btn.getAttribute("data-id"));
+      var viewBtn = e.target.closest("[data-action=\"view\"]");
+      if (viewBtn) {
+        loadSavedAnalysis(viewBtn.getAttribute("data-id"));
+        return;
+      }
+      var pdfBtn = e.target.closest("[data-action=\"pdf\"]");
+      if (pdfBtn) {
+        downloadPdfById(pdfBtn.getAttribute("data-id"));
+        return;
+      }
     });
     if ($("history-search")) {
       $("history-search").addEventListener("input", function () {
@@ -728,10 +951,16 @@
         window.location.href = "/";
       });
     }
-    var exportBtn = $("pdf-export-btn");
-    if (exportBtn) exportBtn.addEventListener("click", exportCurrentPdf);
     var reportExport = $("report-export-btn");
     if (reportExport) reportExport.addEventListener("click", exportCurrentPdf);
+    var pdfExportBtn = $("pdf-export-btn");
+    if (pdfExportBtn) pdfExportBtn.addEventListener("click", exportCurrentPdf);
+    var pdfLink = $("pdf-link");
+    if (pdfLink) pdfLink.addEventListener("click", function (e) {
+      if (!pdfLink.getAttribute("href") || pdfLink.getAttribute("href") === "#") {
+        exportCurrentPdf(e);
+      }
+    });
     var modalClose = $("modal-close");
     if (modalClose) modalClose.addEventListener("click", function () {
       $("login-modal").classList.add("hidden");

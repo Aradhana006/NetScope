@@ -147,3 +147,27 @@ def test_analyze_module_exception_handled(mock_dns, client):
     assert response.status_code == 200
     data = response.get_json()
     assert data["dns"]["status"] == "error"
+
+
+@patch("app.analyze_dns")
+def test_guest_analyze_does_not_save(mock_dns, client):
+    mock_dns.return_value = {"status": "success", "response_code": "NOERROR", "response_time_ms": 1}
+    # No user_id in session
+    response = client.post("/api/analyze", json={"target": "example.com"})
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data.get("saved") is False
+    assert data.get("requires_login_to_save") is True
+    assert "id" not in data
+
+
+def test_unauthorized_report_access(client):
+    # Logged out attempt
+    resp = client.get("/api/report/1")
+    assert resp.status_code == 401
+
+    # Logged in as user 2 trying to access non-existent or other user's report
+    with client.session_transaction() as sess:
+        sess["user_id"] = 2
+    resp2 = client.get("/api/report/99999")
+    assert resp2.status_code == 404
